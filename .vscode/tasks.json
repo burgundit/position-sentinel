@@ -21,7 +21,7 @@
       "label": "Check Python syntax",
       "type": "shell",
       "command": ".venv\\Scripts\\python.exe",
-      "args": ["-m", "py_compile", "server.py", "main.py"],
+      "args": ["-m", "py_compile", "server.py", "symbols.py", "main.py"],
       "problemMatcher": "$python"
     },
     {
