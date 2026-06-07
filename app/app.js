@@ -87,18 +87,72 @@ const sectorSensitivity = {
   "소비재": 0.1
 };
 
+const koreaSymbols = {
+  "현대차": ["005380.KS", "현대차"],
+  "현대자동차": ["005380.KS", "현대차"],
+  "sk하이닉스": ["000660.KS", "SK하이닉스"],
+  "하이닉스": ["000660.KS", "SK하이닉스"],
+  "미래에셋증권": ["006800.KS", "미래에셋증권"],
+  "미래에셋 증권": ["006800.KS", "미래에셋증권"],
+  "삼성전자": ["005930.KS", "삼성전자"],
+  "삼전": ["005930.KS", "삼성전자"],
+  "kodex 고배당주": ["279530.KS", "KODEX 고배당주"],
+  "kodex고배당주": ["279530.KS", "KODEX 고배당주"],
+  "고배당주 etf": ["279530.KS", "KODEX 고배당주"],
+  "고배당 etf": ["279530.KS", "KODEX 고배당주"],
+  "tiger 코스피고배당": ["210780.KS", "TIGER 코스피고배당"],
+  "arirang 고배당주": ["161510.KS", "ARIRANG 고배당주"]
+};
+
+const koreaTickerNames = {
+  "005380.KS": "현대차",
+  "000660.KS": "SK하이닉스",
+  "006800.KS": "미래에셋증권",
+  "005930.KS": "삼성전자",
+  "279530.KS": "KODEX 고배당주",
+  "210780.KS": "TIGER 코스피고배당",
+  "161510.KS": "ARIRANG 고배당주"
+};
+
+function normalizeSymbol(rawSymbol) {
+  const symbol = String(rawSymbol || "UNKNOWN").trim();
+  const key = symbol.toLowerCase().replace(/\s+/g, " ");
+
+  if (koreaSymbols[key]) {
+    const [ticker, name] = koreaSymbols[key];
+    return { ticker, name };
+  }
+
+  let ticker = symbol.toUpperCase();
+  if (/^\d{6}$/.test(ticker)) {
+    ticker = `${ticker}.KS`;
+  }
+
+  return { ticker, name: koreaTickerNames[ticker] || symbol };
+}
+
 function parseHoldings(text) {
-  return text
+  const holdings = text
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
       const parts = line.split(",").map((part) => part.trim());
-      const ticker = (parts[0] || "UNKNOWN").toUpperCase();
+      const { ticker, name } = normalizeSymbol(parts[0] || "UNKNOWN");
       const weight = Number((parts[1] || "0").replace(/[^0-9.]/g, "")) || 0;
       const theme = (parts[2] || "").toLowerCase();
-      return { ticker, weight, theme };
+      return { ticker, name, weight, theme };
     });
+
+  const nonzeroWeightSum = holdings.reduce((sum, holding) => sum + holding.weight, 0);
+  if (holdings.length && nonzeroWeightSum === 0) {
+    const equalWeight = Number((100 / holdings.length).toFixed(2));
+    holdings.forEach((holding) => {
+      holding.weight = equalWeight;
+    });
+  }
+
+  return holdings;
 }
 
 function countMatches(text, words) {

@@ -141,6 +141,11 @@ def parse_holdings(text: str) -> list[dict]:
         weight = float(weight_match) if weight_match else 0
         theme = parts[2].lower() if len(parts) > 2 else ""
         holdings.append({"ticker": ticker, "name": name, "weight": weight, "theme": theme})
+    nonzero_weight_sum = sum(holding["weight"] for holding in holdings)
+    if holdings and nonzero_weight_sum == 0:
+        equal_weight = round(100 / len(holdings), 2)
+        for holding in holdings:
+            holding["weight"] = equal_weight
     return holdings
 
 
