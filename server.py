@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import mimetypes
 import re
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
+from urllib.request import Request, urlopen
 
 
 ROOT = Path(__file__).resolve().parent
@@ -14,6 +16,8 @@ DATA_DIR = ROOT / "data"
 PORTFOLIO_FILE = DATA_DIR / "portfolio.json"
 HOST = "127.0.0.1"
 PORT = 8000
+MARKET_CACHE: dict[str, tuple[float, dict]] = {}
+MARKET_CACHE_SECONDS = 300
 
 POSITIVE_WORDS = [
     "beat",
@@ -148,10 +152,83 @@ def build_checklist(total_score: int, news_score: int, concentration_penalty: fl
     return items
 
 
+def fetch_yahoo_market_data(ticker: str) -> dict:
+    now = time.time()
+    cached = MARKET_CACHE.get(ticker)
+    if cached and now - cached[0] < MARKET_CACHE_SECONDS:
+        return cached[1]
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(ticker)}?range=3mo&interval=1d"
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        },
+    )
+
+    with urlopen(request, timeout=8) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    result = payload["chart"]["result"][0]
+    meta = result["meta"]
+    quote_data = result["indicators"]["quote"][0]
+    closes = [price for price in quote_data.get("close", []) if price is not None]
+    previous_close = meta.get("chartPreviousClose")
+    current_price = meta.get("regularMarketPrice") or (closes[-1] if closes else None)
+
+    change = None
+    change_percent = None
+    if current_price is not None and previous_close:
+        change = current_price - previous_close
+        change_percent = (change / previous_close) * 100
+
+    ma20 = sum(closes[-20:]) / min(len(closes), 20) if closes else None
+    trend = "데이터 부족"
+    trend_score = 0
+    if current_price is not None and ma20:
+        if current_price >= ma20 * 1.03:
+            trend = "상승 추세"
+            trend_score = 2
+        elif current_price <= ma20 * 0.97:
+            trend = "하락 추세"
+            trend_score = -2
+        else:
+            trend = "중립 추세"
+
+    market_data = {
+        "price": round(current_price, 2) if current_price is not None else None,
+        "change": round(change, 2) if change is not None else None,
+        "changePercent": round(change_percent, 2) if change_percent is not None else None,
+        "ma20": round(ma20, 2) if ma20 is not None else None,
+        "trend": trend,
+        "trendScore": trend_score,
+        "currency": meta.get("currency", ""),
+        "source": "Yahoo Finance",
+    }
+    MARKET_CACHE[ticker] = (now, market_data)
+    return market_data
+
+
+def get_market_data(ticker: str, enabled: bool) -> dict:
+    if not enabled:
+        return {"status": "disabled", "trendScore": 0}
+
+    try:
+        return {"status": "ok", **fetch_yahoo_market_data(ticker)}
+    except Exception as exc:
+        return {
+            "status": "unavailable",
+            "trendScore": 0,
+            "message": str(exc),
+        }
+
+
 def analyze_payload(payload: dict) -> dict:
     holdings = parse_holdings(payload.get("holdings", ""))
     news = payload.get("news", "")
     risk = int(payload.get("risk", 3))
+    include_market_data = bool(payload.get("includeMarketData", True))
     macro_score = sum(
         int(payload.get(key, 0))
         for key in ["rateSignal", "inflationSignal", "growthSignal", "marketTrend"]
@@ -161,18 +238,21 @@ def analyze_payload(payload: dict) -> dict:
 
     rows = []
     for holding in holdings:
+        market = get_market_data(holding["ticker"], include_market_data)
         ticker_mentions = count_matches(news, [holding["ticker"]])
         ticker_boost = min(3, ticker_mentions) if ticker_mentions else 0
         sector_adjustment = get_sector_adjustment(holding["theme"], macro_score)
         weight_penalty = -2 if holding["weight"] > 40 else -1 if holding["weight"] > 30 else 0
-        score = round(macro_score + news_score + sector_adjustment + ticker_boost + weight_penalty)
+        trend_score = int(market.get("trendScore", 0))
+        score = round(macro_score + news_score + sector_adjustment + ticker_boost + weight_penalty + trend_score)
         reasons = [
             f"거시 {format_signed(macro_score)}",
             f"뉴스 {format_signed(news_score)}",
             f"섹터 민감도 {format_signed(sector_adjustment)}" if sector_adjustment else "섹터 중립",
             f"비중 부담 {format_signed(weight_penalty)}" if weight_penalty else "비중 안정",
+            f"가격 추세 {format_signed(trend_score)}" if trend_score else "가격 추세 중립",
         ]
-        rows.append({**holding, "score": score, "decision": get_decision(score), "reasons": reasons})
+        rows.append({**holding, "score": score, "decision": get_decision(score), "reasons": reasons, "market": market})
 
     weight_sum = sum(row["weight"] or 1 for row in rows) or 1
     average_position_score = sum(row["score"] * (row["weight"] or 1) for row in rows) / weight_sum
@@ -187,6 +267,7 @@ def analyze_payload(payload: dict) -> dict:
             "concentrationPenalty": concentration_penalty,
             "portfolioDecision": portfolio_decision,
             "holdingsCount": len(holdings),
+            "marketDataEnabled": include_market_data,
         },
         "rows": rows,
         "checklist": build_checklist(total_score, news_score, concentration_penalty, risk),
@@ -209,6 +290,7 @@ def load_portfolio() -> dict:
             "inflationSignal": 0,
             "growthSignal": 0,
             "marketTrend": 0,
+            "includeMarketData": True,
         }
     return json.loads(PORTFOLIO_FILE.read_text(encoding="utf-8"))
 
@@ -222,6 +304,7 @@ def save_portfolio(payload: dict) -> dict:
         "inflationSignal": int(payload.get("inflationSignal", 0)),
         "growthSignal": int(payload.get("growthSignal", 0)),
         "marketTrend": int(payload.get("marketTrend", 0)),
+        "includeMarketData": bool(payload.get("includeMarketData", True)),
     }
     tmp_file = PORTFOLIO_FILE.with_suffix(".json.tmp")
     tmp_file.write_text(json.dumps(portfolio, ensure_ascii=False, indent=2), encoding="utf-8")

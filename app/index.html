@@ -89,6 +89,11 @@
             <output id="riskValue">3</output>
           </div>
 
+          <label class="check-row">
+            <input id="marketDataToggle" type="checkbox" checked />
+            주가/추세 데이터 반영
+          </label>
+
           <button id="analyzeButton" class="primary-button" type="button">분석하기</button>
         </aside>
 
@@ -122,6 +127,7 @@
                 <tr>
                   <th>종목</th>
                   <th>비중</th>
+                  <th>시장 데이터</th>
                   <th>판단</th>
                   <th>점수</th>
                   <th>근거</th>
@@ -129,7 +135,7 @@
               </thead>
               <tbody id="positionsTable">
                 <tr>
-                  <td colspan="5" class="empty">아직 분석 결과가 없습니다.</td>
+                  <td colspan="6" class="empty">아직 분석 결과가 없습니다.</td>
                 </tr>
               </tbody>
             </table>

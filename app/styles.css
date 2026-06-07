@@ -178,6 +178,18 @@ label {
   font-weight: 700;
 }
 
+.check-row {
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  color: var(--ink);
+}
+
+.check-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
 textarea,
 select {
   width: 100%;
@@ -305,7 +317,7 @@ input[type="range"] {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 760px;
+  min-width: 880px;
 }
 
 th,
@@ -358,6 +370,37 @@ td {
 
 .badge.bad {
   background: var(--bad);
+}
+
+.market-cell {
+  min-width: 138px;
+}
+
+.market-price {
+  display: block;
+  font-weight: 800;
+}
+
+.market-change {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.market-change.up {
+  color: var(--good);
+}
+
+.market-change.down {
+  color: var(--bad);
+}
+
+.market-trend {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .checklist {

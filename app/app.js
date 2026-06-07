@@ -6,6 +6,7 @@ const analyzeButton = document.querySelector("#analyzeButton");
 const loadSample = document.querySelector("#loadSample");
 const savePortfolio = document.querySelector("#savePortfolio");
 const loadPortfolio = document.querySelector("#loadPortfolio");
+const marketDataToggle = document.querySelector("#marketDataToggle");
 const rateSignal = document.querySelector("#rateSignal");
 const inflationSignal = document.querySelector("#inflationSignal");
 const growthSignal = document.querySelector("#growthSignal");
@@ -157,7 +158,8 @@ function buildPayload() {
     rateSignal: Number(rateSignal.value),
     inflationSignal: Number(inflationSignal.value),
     growthSignal: Number(growthSignal.value),
-    marketTrend: Number(marketTrend.value)
+    marketTrend: Number(marketTrend.value),
+    includeMarketData: marketDataToggle.checked
   };
 }
 
@@ -177,6 +179,7 @@ function applyPortfolio(portfolio) {
   inflationSignal.value = String(portfolio.inflationSignal ?? "0");
   growthSignal.value = String(portfolio.growthSignal ?? "0");
   marketTrend.value = String(portfolio.marketTrend ?? "0");
+  marketDataToggle.checked = portfolio.includeMarketData ?? true;
   riskValue.value = riskSlider.value;
 }
 
@@ -272,7 +275,7 @@ async function analyze() {
   const concentrationPenalty = getConcentrationPenalty(holdings, risk);
 
   if (!holdings.length) {
-    positionsTable.innerHTML = `<tr><td colspan="5" class="empty">보유 종목을 먼저 입력하세요.</td></tr>`;
+    positionsTable.innerHTML = `<tr><td colspan="6" class="empty">보유 종목을 먼저 입력하세요.</td></tr>`;
     return;
   }
 
@@ -334,6 +337,7 @@ function renderRows(rows) {
         <tr>
           <td><strong>${sanitize(row.ticker)}</strong><br><span class="muted">${sanitize(row.theme || "테마 미입력")}</span></td>
           <td>${row.weight || 0}%</td>
+          <td class="market-cell">${renderMarketData(row.market)}</td>
           <td><span class="badge ${row.decision.className}">${row.decision.label}</span></td>
           <td><strong>${row.score}</strong></td>
           <td>${row.reasons.map(sanitize).join(" · ")}</td>
@@ -341,6 +345,28 @@ function renderRows(rows) {
       `;
     })
     .join("");
+}
+
+function renderMarketData(market) {
+  if (!market || market.status === "disabled") {
+    return `<span class="market-trend">미반영</span>`;
+  }
+
+  if (market.status !== "ok") {
+    return `<span class="market-trend">조회 실패</span>`;
+  }
+
+  const changeClass = market.changePercent > 0 ? "up" : market.changePercent < 0 ? "down" : "";
+  const changeText = market.changePercent === null || market.changePercent === undefined
+    ? "-"
+    : `${formatSigned(market.changePercent)}%`;
+  const currency = market.currency ? ` ${sanitize(market.currency)}` : "";
+
+  return `
+    <span class="market-price">${sanitize(market.price ?? "-")}${currency}</span>
+    <span class="market-change ${changeClass}">${sanitize(changeText)}</span>
+    <span class="market-trend">${sanitize(market.trend || "데이터 부족")}</span>
+  `;
 }
 
 function renderChecklist({ totalScore, rawNewsScore, concentrationPenalty, risk }) {
@@ -393,7 +419,8 @@ function saveState() {
     rate: rateSignal.value,
     inflation: inflationSignal.value,
     growth: growthSignal.value,
-    trend: marketTrend.value
+    trend: marketTrend.value,
+    marketData: marketDataToggle.checked
   };
   localStorage.setItem("positionSentinelState", JSON.stringify(state));
 }
@@ -409,6 +436,7 @@ function loadState() {
   inflationSignal.value = state.inflation || "0";
   growthSignal.value = state.growth || "0";
   marketTrend.value = state.trend || "0";
+  marketDataToggle.checked = state.marketData ?? true;
   riskValue.value = riskSlider.value;
 }
 
