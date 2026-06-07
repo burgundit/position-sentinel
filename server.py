@@ -88,6 +88,77 @@ SECTOR_SENSITIVITY = {
     "소비재": 0.1,
 }
 
+PROFILE_RULES = [
+    {
+        "label": "고성장/고밸류",
+        "keywords": [
+            "ai",
+            "반도체",
+            "소프트웨어",
+            "클라우드",
+            "전기차",
+            "양자",
+            "growth",
+            "PLTR",
+            "NVDA",
+            "TSLA",
+            "IONQ",
+            "RIVN",
+            "LCID",
+            "SMCI",
+            "SNOW",
+            "DDOG",
+        ],
+        "rate": -1.0,
+        "cycle": 0.8,
+        "market": 0.7,
+        "base": -0.4,
+    },
+    {
+        "label": "방어/배당",
+        "keywords": [
+            "배당",
+            "방어",
+            "필수소비",
+            "헬스케어",
+            "SCHD",
+            "PG",
+            "KO",
+            "PEP",
+            "WMT",
+            "JNJ",
+            "UNH",
+            "LLY",
+            "MRK",
+        ],
+        "rate": -0.3,
+        "cycle": -0.2,
+        "market": -0.4,
+        "base": 0.7,
+    },
+    {
+        "label": "경기민감",
+        "keywords": ["자동차", "산업재", "소비재", "에너지", "은행", "CAT", "BA", "XOM", "CVX", "JPM", "BAC", "GS"],
+        "rate": -0.4,
+        "cycle": 0.9,
+        "market": 0.4,
+        "base": 0.0,
+    },
+    {
+        "label": "장기채/금리민감",
+        "keywords": ["채권", "미국채", "TLT"],
+        "rate": -1.2,
+        "cycle": -0.2,
+        "market": -0.2,
+        "base": 0.0,
+    },
+]
+
+SPECULATIVE_TICKERS = {"IONQ", "RIVN", "LCID", "SMCI", "SNOW", "DDOG", "RBLX", "SNAP", "PLTR"}
+QUALITY_TICKERS = {"AAPL", "MSFT", "NVDA", "AVGO", "GOOGL", "META", "COST", "LLY", "UNH", "BRK-B", "ASML", "TSM"}
+DEFENSIVE_TICKERS = {"PG", "KO", "PEP", "WMT", "COST", "JNJ", "UNH", "LLY", "MRK", "SCHD"}
+SEVERE_NEGATIVE_WORDS = ["lawsuit", "probe", "ban", "recall", "downgrade", "소송", "조사", "금지", "리콜", "하향"]
+
 KOREA_SYMBOLS = {
     "apple": ("AAPL", "Apple"),
     "애플": ("AAPL", "Apple"),
@@ -444,6 +515,64 @@ def get_sector_adjustment(theme: str, macro_score: int) -> int:
     return round((macro_score * sensitivity) / 3)
 
 
+def get_position_profile(holding: dict) -> dict:
+    text = f"{holding.get('ticker', '')} {holding.get('name', '')} {holding.get('theme', '')}".lower()
+    matched = []
+    rate = 0.0
+    cycle = 0.0
+    market = 0.0
+    base = 0.0
+
+    for rule in PROFILE_RULES:
+        if any(keyword.lower() in text for keyword in rule["keywords"]):
+            matched.append(rule["label"])
+            rate += float(rule["rate"])
+            cycle += float(rule["cycle"])
+            market += float(rule["market"])
+            base += float(rule["base"])
+
+    ticker = holding.get("ticker", "")
+    if ticker in SPECULATIVE_TICKERS:
+        matched.append("변동성 큼")
+        base -= 0.8
+        market += 0.4
+    if ticker in QUALITY_TICKERS:
+        matched.append("우량 대형")
+        base += 0.7
+    if ticker in DEFENSIVE_TICKERS:
+        matched.append("방어성")
+        base += 0.4
+
+    return {
+        "labels": list(dict.fromkeys(matched)) or ["일반"],
+        "rate": max(-2.0, min(1.0, rate)),
+        "cycle": max(-1.0, min(1.5, cycle)),
+        "market": max(-1.0, min(1.5, market)),
+        "base": max(-2.0, min(2.0, base)),
+    }
+
+
+def get_style_adjustment(holding: dict, payload: dict, risk: int, news: str) -> tuple[int, dict]:
+    profile = get_position_profile(holding)
+    rate_signal = int(payload.get("rateSignal", 0))
+    growth_signal = int(payload.get("growthSignal", 0))
+    market_signal = int(payload.get("marketTrend", 0))
+    risk_multiplier = 0.8 + (risk * 0.12)
+
+    raw_score = (
+        profile["base"]
+        + profile["rate"] * (-rate_signal)
+        + profile["cycle"] * growth_signal
+        + profile["market"] * market_signal
+    )
+    severe_negative = count_matches(news, SEVERE_NEGATIVE_WORDS)
+    if severe_negative and holding.get("ticker") in SPECULATIVE_TICKERS:
+        raw_score -= min(2, severe_negative)
+
+    score = round(raw_score * risk_multiplier)
+    return score, {"labels": profile["labels"], "rawScore": round(raw_score, 2)}
+
+
 def get_concentration_penalty(holdings: list[dict], risk: int) -> float:
     largest = max([holding["weight"] for holding in holdings], default=0)
     overweight_penalty = -3 if largest > 45 else -2 if largest > 35 else -1 if largest > 25 else 0
@@ -478,6 +607,9 @@ def build_checklist(total_score: int, news_score: int, concentration_penalty: fl
 
     if risk >= 4:
         items.append("리스크 민감도가 높게 설정되어 있습니다. 보수적 기준에서는 부분 익절/축소 신호가 더 빨리 나옵니다.")
+
+    if total_score >= 1 and news_score <= 0:
+        items.append("점수는 유지권이지만 뉴스 모멘텀이 강하지 않습니다. 추세가 꺾이면 유지 기준을 다시 낮추세요.")
 
     return items
 
@@ -769,25 +901,47 @@ def analyze_payload(payload: dict) -> dict:
     market_data_by_ticker = get_market_data_map(holdings, include_market_data)
 
     rows = []
+    weighted_style_score = 0.0
     for holding in holdings:
         market = market_data_by_ticker.get(holding["ticker"], {"status": "unavailable", "trendScore": 0})
         ticker_mentions = count_matches(news, [holding["ticker"]])
         ticker_boost = min(3, ticker_mentions) if ticker_mentions else 0
         sector_adjustment = get_sector_adjustment(holding["theme"], macro_score)
+        style_adjustment, profile = get_style_adjustment(holding, payload, risk, news)
         weight_penalty = -2 if holding["weight"] > 40 else -1 if holding["weight"] > 30 else 0
         trend_score = int(market.get("trendScore", 0))
-        score = round(macro_score + news_score + sector_adjustment + ticker_boost + weight_penalty + trend_score)
+        score = round(
+            macro_score
+            + news_score
+            + sector_adjustment
+            + style_adjustment
+            + ticker_boost
+            + weight_penalty
+            + trend_score
+        )
         reasons = [
             f"거시 {format_signed(macro_score)}",
             f"뉴스 {format_signed(news_score)}",
             f"섹터 민감도 {format_signed(sector_adjustment)}" if sector_adjustment else "섹터 중립",
+            f"스타일 {format_signed(style_adjustment)} ({', '.join(profile['labels'])})",
             f"비중 부담 {format_signed(weight_penalty)}" if weight_penalty else "비중 안정",
             f"가격 추세 {format_signed(trend_score)}" if trend_score else "가격 추세 중립",
         ]
-        rows.append({**holding, "score": score, "decision": get_decision(score), "reasons": reasons, "market": market})
+        weighted_style_score += style_adjustment * (holding["weight"] or 1)
+        rows.append(
+            {
+                **holding,
+                "score": score,
+                "decision": get_decision(score),
+                "reasons": reasons,
+                "market": market,
+                "profile": profile,
+            }
+        )
 
     weight_sum = sum(row["weight"] or 1 for row in rows) or 1
     average_position_score = sum(row["score"] * (row["weight"] or 1) for row in rows) / weight_sum
+    style_score = round(weighted_style_score / weight_sum)
     total_score = round(average_position_score + concentration_penalty)
     portfolio_decision = get_decision(total_score)
 
@@ -796,6 +950,7 @@ def analyze_payload(payload: dict) -> dict:
             "totalScore": total_score,
             "macroScore": macro_score,
             "newsScore": news_score,
+            "styleScore": style_score,
             "concentrationPenalty": concentration_penalty,
             "portfolioDecision": portfolio_decision,
             "holdingsCount": len(holdings),

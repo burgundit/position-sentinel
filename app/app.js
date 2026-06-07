@@ -87,6 +87,46 @@ const sectorSensitivity = {
   "소비재": 0.1
 };
 
+const profileRules = [
+  {
+    label: "고성장/고밸류",
+    keywords: ["ai", "반도체", "소프트웨어", "클라우드", "전기차", "양자", "growth", "PLTR", "NVDA", "TSLA", "IONQ", "RIVN", "LCID", "SMCI", "SNOW", "DDOG"],
+    rate: -1,
+    cycle: 0.8,
+    market: 0.7,
+    base: -0.4
+  },
+  {
+    label: "방어/배당",
+    keywords: ["배당", "방어", "필수소비", "헬스케어", "SCHD", "PG", "KO", "PEP", "WMT", "JNJ", "UNH", "LLY", "MRK"],
+    rate: -0.3,
+    cycle: -0.2,
+    market: -0.4,
+    base: 0.7
+  },
+  {
+    label: "경기민감",
+    keywords: ["자동차", "산업재", "소비재", "에너지", "은행", "CAT", "BA", "XOM", "CVX", "JPM", "BAC", "GS"],
+    rate: -0.4,
+    cycle: 0.9,
+    market: 0.4,
+    base: 0
+  },
+  {
+    label: "장기채/금리민감",
+    keywords: ["채권", "미국채", "TLT"],
+    rate: -1.2,
+    cycle: -0.2,
+    market: -0.2,
+    base: 0
+  }
+];
+
+const speculativeTickers = new Set(["IONQ", "RIVN", "LCID", "SMCI", "SNOW", "DDOG", "RBLX", "SNAP", "PLTR"]);
+const qualityTickers = new Set(["AAPL", "MSFT", "NVDA", "AVGO", "GOOGL", "META", "COST", "LLY", "UNH", "BRK-B", "ASML", "TSM"]);
+const defensiveTickers = new Set(["PG", "KO", "PEP", "WMT", "COST", "JNJ", "UNH", "LLY", "MRK", "SCHD"]);
+const severeNegativeWords = ["lawsuit", "probe", "ban", "recall", "downgrade", "소송", "조사", "금지", "리콜", "하향"];
+
 const koreaSymbols = {
   "apple": ["AAPL", "Apple"],
   "애플": ["AAPL", "Apple"],
@@ -426,6 +466,70 @@ function getSectorAdjustment(theme, macroScore) {
   return Math.round((macroScore * sensitivity) / 3);
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getPositionProfile(holding) {
+  const text = `${holding.ticker || ""} ${holding.name || ""} ${holding.theme || ""}`.toLowerCase();
+  const labels = [];
+  let rate = 0;
+  let cycle = 0;
+  let market = 0;
+  let base = 0;
+
+  profileRules.forEach((rule) => {
+    if (rule.keywords.some((keyword) => text.includes(keyword.toLowerCase()))) {
+      labels.push(rule.label);
+      rate += rule.rate;
+      cycle += rule.cycle;
+      market += rule.market;
+      base += rule.base;
+    }
+  });
+
+  if (speculativeTickers.has(holding.ticker)) {
+    labels.push("변동성 큼");
+    base -= 0.8;
+    market += 0.4;
+  }
+  if (qualityTickers.has(holding.ticker)) {
+    labels.push("우량 대형");
+    base += 0.7;
+  }
+  if (defensiveTickers.has(holding.ticker)) {
+    labels.push("방어성");
+    base += 0.4;
+  }
+
+  return {
+    labels: [...new Set(labels.length ? labels : ["일반"])],
+    rate: clamp(rate, -2, 1),
+    cycle: clamp(cycle, -1, 1.5),
+    market: clamp(market, -1, 1.5),
+    base: clamp(base, -2, 2)
+  };
+}
+
+function getStyleAdjustment(holding, risk, news) {
+  const profile = getPositionProfile(holding);
+  const riskMultiplier = 0.8 + risk * 0.12;
+  let rawScore = profile.base +
+    profile.rate * -Number(rateSignal.value) +
+    profile.cycle * Number(growthSignal.value) +
+    profile.market * Number(marketTrend.value);
+
+  const severeNegative = countMatches(news, severeNegativeWords);
+  if (severeNegative && speculativeTickers.has(holding.ticker)) {
+    rawScore -= Math.min(2, severeNegative);
+  }
+
+  return {
+    score: Math.round(rawScore * riskMultiplier),
+    profile: { labels: profile.labels, rawScore: Number(rawScore.toFixed(2)) }
+  };
+}
+
 function getDecision(score) {
   if (score >= 5) return { label: "롱 유지", className: "good" };
   if (score >= 1) return { label: "조건부 유지", className: "warn" };
@@ -652,21 +756,27 @@ async function analyze() {
     const tickerMentions = countMatches(news, [holding.ticker]);
     const tickerBoost = tickerMentions ? Math.min(3, tickerMentions) : 0;
     const sectorAdjustment = getSectorAdjustment(holding.theme, macroScore);
+    const styleAdjustment = getStyleAdjustment(holding, risk, news);
     const weightPenalty = holding.weight > 40 ? -2 : holding.weight > 30 ? -1 : 0;
-    const score = Math.round(macroScore + rawNewsScore + sectorAdjustment + tickerBoost + weightPenalty);
+    const score = Math.round(
+      macroScore + rawNewsScore + sectorAdjustment + styleAdjustment.score + tickerBoost + weightPenalty
+    );
     const decision = getDecision(score);
     const reasons = [
       `거시 ${formatSigned(macroScore)}`,
       `뉴스 ${formatSigned(rawNewsScore)}`,
       sectorAdjustment ? `섹터 민감도 ${formatSigned(sectorAdjustment)}` : "섹터 중립",
+      `스타일 ${formatSigned(styleAdjustment.score)} (${styleAdjustment.profile.labels.join(", ")})`,
       weightPenalty ? `비중 부담 ${formatSigned(weightPenalty)}` : "비중 안정"
     ];
 
-    return { ...holding, score, decision, reasons };
+    return { ...holding, score, decision, reasons, profile: styleAdjustment.profile, styleScore: styleAdjustment.score };
   });
 
   const averagePositionScore = rows.reduce((sum, row) => sum + row.score * (row.weight || 1), 0) /
     rows.reduce((sum, row) => sum + (row.weight || 1), 0);
+  const weightSum = rows.reduce((sum, row) => sum + (row.weight || 1), 0);
+  const styleScore = rows.reduce((sum, row) => sum + row.styleScore * (row.weight || 1), 0) / weightSum;
   const totalScore = Math.round(averagePositionScore + concentrationPenalty);
   const portfolioDecision = getDecision(totalScore);
 
@@ -674,6 +784,7 @@ async function analyze() {
     totalScore,
     macroScore,
     newsScore: rawNewsScore,
+    styleScore: Math.round(styleScore),
     concentrationPenalty,
     portfolioDecision,
     holdings
@@ -683,7 +794,7 @@ async function analyze() {
   saveState();
 }
 
-function updateSummary({ totalScore, macroScore, newsScore, concentrationPenalty, portfolioDecision, holdings, holdingsCount }) {
+function updateSummary({ totalScore, macroScore, newsScore, styleScore = 0, concentrationPenalty, portfolioDecision, holdings, holdingsCount }) {
   const count = holdings ? holdings.length : holdingsCount;
   portfolioBias.textContent = portfolioDecision.label;
   portfolioScore.textContent = totalScore;
@@ -696,7 +807,7 @@ function updateSummary({ totalScore, macroScore, newsScore, concentrationPenalty
   decisionReason.textContent =
     `총 ${count}개 종목 기준입니다. 포트폴리오 점수는 ${totalScore}점이며, ` +
     `거시 환경 ${formatSigned(macroScore)}, 뉴스 심리 ${formatSigned(newsScore)}, ` +
-    `집중 리스크 ${formatSigned(Math.round(concentrationPenalty))}가 반영되었습니다.`;
+    `스타일 적합도 ${formatSigned(styleScore)}, 집중 리스크 ${formatSigned(Math.round(concentrationPenalty))}가 반영되었습니다.`;
 }
 
 function renderRows(rows) {
@@ -757,6 +868,10 @@ function renderChecklist({ totalScore, rawNewsScore, concentrationPenalty, risk 
 
   if (risk >= 4) {
     items.push("리스크 민감도가 높게 설정되어 있습니다. 보수적 기준에서는 부분 익절/축소 신호가 더 빨리 나옵니다.");
+  }
+
+  if (totalScore >= 1 && rawNewsScore <= 0) {
+    items.push("점수는 유지권이지만 뉴스 모멘텀이 강하지 않습니다. 추세가 꺾이면 유지 기준을 다시 낮추세요.");
   }
 
   checklist.innerHTML = items.map((item) => `<li>${sanitize(item)}</li>`).join("");
