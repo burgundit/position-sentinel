@@ -10,6 +10,8 @@
 - `app/app.js`: 화면 상태, 이벤트 연결, 분석 결과 렌더링
 - `app/modules/api.js`: 서버 API 호출
 - `app/modules/dom.js`: 화면 요소 참조
+- `app/modules/holdings.js`: 보유종목 파싱과 입력 문자열 변환
+- `app/modules/symbols.js`: 종목 별칭과 티커 정규화
 - `app/modules/utils.js`: 공통 포맷/문자열 유틸
 - `server.py`: Python 서버, 분석 API, 포트폴리오 저장 API, Yahoo Finance 조회
 - `run_server.bat`: Windows 실행용 서버 시작 파일
