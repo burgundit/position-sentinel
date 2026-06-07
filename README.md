@@ -45,8 +45,12 @@ http://127.0.0.1:8000
 
 - `Run server`: VS Code 작업 실행 메뉴에서 Python 서버를 시작합니다.
 - `Check Python syntax`: `server.py`, `main.py` 문법을 빠르게 확인합니다.
+- `Check JS syntax`: 프론트엔드 JavaScript 모듈 문법을 확인합니다.
+- `Check all`: Python, JavaScript, Git 상태를 한 번에 확인합니다.
 - `Git status`: 현재 Git 변경 상태를 확인합니다.
 - Python 인터프리터는 `.venv\Scripts\python.exe`를 기본값으로 잡습니다.
+
+GitHub Actions도 설정되어 있어 `main` 브랜치에 push하거나 pull request를 만들면 Python/JavaScript 문법 검사가 자동 실행됩니다.
 
 서버로 실행하면 `저장` 버튼으로 보유 종목과 지표 설정을 저장하고, `불러오기` 버튼으로 다시 가져올 수 있습니다.
 저장 파일은 `data/portfolio.json`에 만들어지며 GitHub에는 올라가지 않습니다.

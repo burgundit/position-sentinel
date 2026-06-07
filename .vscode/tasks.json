@@ -25,6 +25,29 @@
       "problemMatcher": "$python"
     },
     {
+      "label": "Check JS syntax",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "tools\\check-js.ps1"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Check all",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Check Python syntax",
+        "Check JS syntax",
+        "Git status"
+      ],
+      "problemMatcher": []
+    },
+    {
       "label": "Git status",
       "type": "shell",
       "command": "git",
