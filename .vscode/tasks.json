@@ -20,9 +20,15 @@
     {
       "label": "Check Python syntax",
       "type": "shell",
-      "command": ".venv\\Scripts\\python.exe",
-      "args": ["-m", "py_compile", "server.py", "backend\\server.py", "backend\\symbols.py", "main.py"],
-      "problemMatcher": "$python"
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "tools\\check-python.ps1"
+      ],
+      "problemMatcher": []
     },
     {
       "label": "Check JS syntax",

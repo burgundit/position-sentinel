@@ -5,21 +5,12 @@
 
 ## 현재 구조
 
-- `app/index.html`: 웹앱 화면
-- `app/styles.css`: 디자인
-- `app/app.js`: 화면 상태, 이벤트 연결, 분석 결과 렌더링
-- `app/modules/analysis.js`: 브라우저 fallback용 점수 계산과 판단 기준
-- `app/modules/api.js`: 서버 API 호출
-- `app/modules/dom.js`: 화면 요소 참조
-- `app/modules/holdings.js`: 보유종목 파싱과 입력 문자열 변환
-- `app/modules/symbols.js`: 종목 별칭과 티커 정규화
-- `app/modules/utils.js`: 공통 포맷/문자열 유틸
+- `app/`: 웹앱 화면과 프론트엔드 모듈
+- `backend/`: Python 서버와 종목 검색 모듈
 - `server.py`: 기존 실행 명령을 유지하는 Python 서버 진입점
-- `backend/server.py`: Python 서버, 분석 API, 포트폴리오 저장 API, Yahoo Finance 조회
-- `backend/symbols.py`: 서버용 종목 별칭, 티커 정규화, KRX/Yahoo 종목 검색
-- `run_server.bat`: Windows 실행용 서버 시작 파일
-- `main.py`: Python 개발환경 테스트 파일
-- `.venv/`: Python 가상환경
+- `tools/`: 로컬 검사 스크립트
+- `.github/`: GitHub Actions와 이슈/PR 템플릿
+- `docs/DEVELOPMENT.md`: 개발환경, 검사, 폴더 구조 상세 안내
 
 ## 지금 실행하기
 
@@ -43,16 +34,8 @@ http://127.0.0.1:8000
 
 ## VS Code 작업환경
 
-저장소에는 `.vscode/` 기본 설정이 포함되어 있습니다.
-
-- `Run server`: VS Code 작업 실행 메뉴에서 Python 서버를 시작합니다.
-- `Check Python syntax`: `server.py`, `main.py` 문법을 빠르게 확인합니다.
-- `Check JS syntax`: 프론트엔드 JavaScript 모듈 문법을 확인합니다.
-- `Check all`: Python, JavaScript, Git 상태를 한 번에 확인합니다.
-- `Git status`: 현재 Git 변경 상태를 확인합니다.
-- Python 인터프리터는 `.venv\Scripts\python.exe`를 기본값으로 잡습니다.
-
-GitHub Actions도 설정되어 있어 `main` 브랜치에 push하거나 pull request를 만들면 Python/JavaScript 문법 검사가 자동 실행됩니다.
+저장소에는 `.vscode/` 기본 설정과 GitHub Actions가 포함되어 있습니다.
+자세한 개발 작업 방법은 `docs/DEVELOPMENT.md`를 참고하세요.
 
 서버로 실행하면 `저장` 버튼으로 보유 종목과 지표 설정을 저장하고, `불러오기` 버튼으로 다시 가져올 수 있습니다.
 저장 파일은 `data/portfolio.json`에 만들어지며 GitHub에는 올라가지 않습니다.
@@ -97,11 +80,11 @@ python server.py
 start app\index.html
 ```
 
-Python 테스트는 아래처럼 실행합니다.
+로컬 검사는 아래처럼 실행합니다.
 
 ```powershell
-.venv\Scripts\Activate.ps1
-python main.py
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\check-python.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\check-js.ps1
 ```
 
 ## 완료된 기능
