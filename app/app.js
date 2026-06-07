@@ -9,6 +9,10 @@ const loadPortfolio = document.querySelector("#loadPortfolio");
 const marketDataToggle = document.querySelector("#marketDataToggle");
 const autoEnvironment = document.querySelector("#autoEnvironment");
 const autoNews = document.querySelector("#autoNews");
+const symbolSearchInput = document.querySelector("#symbolSearchInput");
+const symbolSearchButton = document.querySelector("#symbolSearchButton");
+const symbolSearchStatus = document.querySelector("#symbolSearchStatus");
+const symbolSearchResults = document.querySelector("#symbolSearchResults");
 const rateSignal = document.querySelector("#rateSignal");
 const inflationSignal = document.querySelector("#inflationSignal");
 const growthSignal = document.querySelector("#growthSignal");
@@ -568,6 +572,77 @@ function setNewsStatus(message, state = "") {
   newsStatus.className = state ? `storage-status ${state}` : "storage-status";
 }
 
+function setSymbolSearchStatus(message, state = "") {
+  symbolSearchStatus.textContent = message;
+  symbolSearchStatus.className = state ? `storage-status ${state}` : "storage-status";
+}
+
+function addHoldingFromSymbol(result) {
+  const existing = holdingsInput.value.trim();
+  const line = `${result.ticker}, 0%, `;
+  holdingsInput.value = existing ? `${existing}\n${line}` : line;
+  setSymbolSearchStatus(`${result.name} / ${result.ticker}를 보유 종목에 추가했습니다.`, "good");
+  symbolSearchInput.value = "";
+  symbolSearchResults.innerHTML = "";
+  saveState();
+  analyze();
+}
+
+function renderSymbolResults(results) {
+  if (!results.length) {
+    symbolSearchResults.innerHTML = "";
+    return;
+  }
+
+  symbolSearchResults.innerHTML = results.map((result) => {
+    const exchange = result.exchange ? ` · ${sanitize(result.exchange)}` : "";
+    const source = result.source ? ` · ${sanitize(result.source)}` : "";
+    return `
+      <button class="symbol-result" type="button" data-ticker="${sanitize(result.ticker)}" data-name="${sanitize(result.name)}">
+        <strong>${sanitize(result.ticker)}</strong>
+        <span>${sanitize(result.name)}${exchange}${source}</span>
+      </button>
+    `;
+  }).join("");
+}
+
+async function searchSymbols() {
+  const query = symbolSearchInput.value.trim();
+  if (query.length < 2) {
+    setSymbolSearchStatus("두 글자 이상 입력하세요.", "bad");
+    symbolSearchResults.innerHTML = "";
+    return;
+  }
+
+  if (!canUseServerStorage()) {
+    const normalized = normalizeSymbol(query);
+    renderSymbolResults([{ ...normalized, source: "브라우저 별칭" }]);
+    setSymbolSearchStatus("서버 없이 열려 있어 내장 별칭만 사용합니다.", "bad");
+    return;
+  }
+
+  symbolSearchButton.disabled = true;
+  symbolSearchButton.textContent = "조회 중";
+  setSymbolSearchStatus("종목 후보를 조회하고 있습니다.");
+
+  try {
+    const response = await fetch(`/api/symbol-search?q=${encodeURIComponent(query)}`);
+    if (!response.ok) {
+      throw new Error("symbol search failed");
+    }
+
+    const payload = await response.json();
+    renderSymbolResults(payload.results || []);
+    setSymbolSearchStatus(payload.message || "조회가 완료되었습니다.", payload.results?.length ? "good" : "bad");
+  } catch (error) {
+    setSymbolSearchStatus("종목 검색 API 조회에 실패했습니다.", "bad");
+    symbolSearchResults.innerHTML = "";
+  } finally {
+    symbolSearchButton.disabled = false;
+    symbolSearchButton.textContent = "검색";
+  }
+}
+
 function applyPortfolio(portfolio) {
   holdingsInput.value = portfolio.holdings || "";
   riskSlider.value = String(portfolio.risk ?? "3");
@@ -940,7 +1015,7 @@ function loadSampleData() {
   rateSignal.value = "2";
   inflationSignal.value = "0";
   growthSignal.value = "2";
-  marketTrend.value = "2";
+  marketTrend.value = "1";
   riskSlider.value = "3";
   riskValue.value = "3";
   analyze();
@@ -956,6 +1031,21 @@ savePortfolio.addEventListener("click", savePortfolioData);
 loadPortfolio.addEventListener("click", loadPortfolioData);
 autoEnvironment.addEventListener("click", applyAutoEnvironment);
 autoNews.addEventListener("click", applyAutoNews);
+symbolSearchButton.addEventListener("click", searchSymbols);
+symbolSearchInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    searchSymbols();
+  }
+});
+symbolSearchResults.addEventListener("click", (event) => {
+  const button = event.target.closest(".symbol-result");
+  if (!button) return;
+  addHoldingFromSymbol({
+    ticker: button.dataset.ticker,
+    name: button.dataset.name
+  });
+});
 
 loadState();
 if (holdingsInput.value.trim()) {

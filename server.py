@@ -8,7 +8,7 @@ from html import unescape
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote, unquote
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
@@ -450,6 +450,64 @@ def search_yahoo_symbol(query: str) -> tuple[str, str] | None:
     result = (symbol, name)
     SYMBOL_SEARCH_CACHE[key] = (now, result)
     return result
+
+
+def search_symbols(query: str) -> dict:
+    normalized_query = re.sub(r"\s+", " ", query.strip())
+    if len(normalized_query) < 2:
+        return {"query": query, "results": [], "message": "두 글자 이상 입력하세요."}
+
+    results: list[dict] = []
+    seen: set[str] = set()
+    key = normalized_query.lower()
+
+    for alias, (ticker, name) in KOREA_SYMBOLS.items():
+        if key in alias.lower() or key in name.lower() or key in ticker.lower():
+            if ticker not in seen:
+                results.append({"ticker": ticker, "name": name, "source": "내장 별칭"})
+                seen.add(ticker)
+
+    try:
+        url = f"https://query1.finance.yahoo.com/v1/finance/search?q={quote(normalized_query)}&quotesCount=10&newsCount=0"
+        request = Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json",
+            },
+        )
+        with urlopen(request, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        preferred_exchanges = {"NMS": 0, "NGM": 0, "NYQ": 0, "PCX": 1, "KSC": 1, "KOE": 1}
+        quotes = [
+            item
+            for item in payload.get("quotes", [])
+            if item.get("symbol") and item.get("quoteType") in {"EQUITY", "ETF", "INDEX"}
+        ]
+        quotes.sort(key=lambda item: preferred_exchanges.get(item.get("exchange"), 5))
+
+        for item in quotes:
+            ticker = str(item["symbol"]).upper()
+            if ticker in seen:
+                continue
+            name = item.get("shortname") or item.get("longname") or ticker
+            exchange = item.get("exchDisp") or item.get("exchange") or ""
+            results.append({"ticker": ticker, "name": name, "exchange": exchange, "source": "Yahoo Finance"})
+            seen.add(ticker)
+            if len(results) >= 8:
+                break
+    except Exception:
+        pass
+
+    if not results:
+        try:
+            ticker, name = normalize_symbol(normalized_query)
+            results.append({"ticker": ticker, "name": name, "source": "입력값 변환"})
+        except Exception:
+            pass
+
+    return {"query": query, "results": results[:8], "message": f"{len(results[:8])}개 후보를 찾았습니다."}
 
 
 def normalize_symbol(raw_symbol: str) -> tuple[str, str]:
@@ -1001,7 +1059,9 @@ def save_portfolio(payload: dict) -> dict:
 
 class PositionSentinelHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
-        path = unquote(self.path.split("?", 1)[0])
+        parsed_url = urlsplit(self.path)
+        path = unquote(parsed_url.path)
+        query = parse_qs(parsed_url.query)
 
         if path == "/api/portfolio":
             self.write_json(200, load_portfolio())
@@ -1010,6 +1070,13 @@ class PositionSentinelHandler(BaseHTTPRequestHandler):
         if path == "/api/environment":
             try:
                 self.write_json(200, build_environment_suggestion())
+            except Exception as exc:
+                self.write_json(400, {"error": str(exc)})
+            return
+
+        if path == "/api/symbol-search":
+            try:
+                self.write_json(200, search_symbols(query.get("q", [""])[0]))
             except Exception as exc:
                 self.write_json(400, {"error": str(exc)})
             return
