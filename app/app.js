@@ -531,9 +531,9 @@ function getStyleAdjustment(holding, risk, news) {
 }
 
 function getDecision(score) {
-  if (score >= 5) return { label: "롱 유지", className: "good" };
-  if (score >= 1) return { label: "조건부 유지", className: "warn" };
-  return { label: "축소 검토", className: "bad" };
+  if (score >= 5) return { label: "1년 롱 유지", className: "good" };
+  if (score >= 1) return { label: "1년 조건부 유지", className: "warn" };
+  return { label: "1년 기준 축소 검토", className: "bad" };
 }
 
 function buildPayload() {
@@ -805,7 +805,7 @@ function updateSummary({ totalScore, macroScore, newsScore, styleScore = 0, conc
   decisionBand.className = `decision-band ${portfolioDecision.className}`;
   mainDecision.textContent = portfolioDecision.label;
   decisionReason.textContent =
-    `총 ${count}개 종목 기준입니다. 포트폴리오 점수는 ${totalScore}점이며, ` +
+    `최소 1년 보유를 전제로 총 ${count}개 종목을 점검했습니다. 포트폴리오 점수는 ${totalScore}점이며, ` +
     `거시 환경 ${formatSigned(macroScore)}, 뉴스 심리 ${formatSigned(newsScore)}, ` +
     `스타일 적합도 ${formatSigned(styleScore)}, 집중 리스크 ${formatSigned(Math.round(concentrationPenalty))}가 반영되었습니다.`;
 }
@@ -853,25 +853,25 @@ function renderChecklist({ totalScore, rawNewsScore, concentrationPenalty, risk 
   const items = [];
 
   if (totalScore < 1) {
-    items.push("롱 유지 근거가 약합니다. 신규 매수보다 손절선, 헤지, 비중 축소 기준을 먼저 확인하세요.");
+    items.push("1년 보유 근거가 약합니다. 단기 가격보다 매출/마진/현금흐름 전망이 훼손됐는지 먼저 확인하세요.");
   } else {
-    items.push("롱 유지가 가능하더라도 다음 실적 발표와 주요 지표 발표 전후 변동성 계획을 세우세요.");
+    items.push("1년 롱 유지가 가능하더라도 다음 2~4개 분기 실적에서 확인할 핵심 지표를 미리 정하세요.");
   }
 
   if (rawNewsScore < 0) {
-    items.push("부정 뉴스가 우세합니다. 일회성 이슈인지, 이익 전망 훼손인지 분리해서 보세요.");
+    items.push("부정 뉴스가 우세합니다. 일회성 가격 이슈인지, 1년 이익 전망을 낮추는 이슈인지 분리해서 보세요.");
   }
 
   if (concentrationPenalty < -1) {
-    items.push("집중 리스크가 큽니다. 같은 테마가 동시에 흔들릴 때의 최대 손실을 계산하세요.");
+    items.push("집중 리스크가 큽니다. 같은 테마가 1년 동안 부진할 때도 버틸 수 있는 비중인지 점검하세요.");
   }
 
   if (risk >= 4) {
-    items.push("리스크 민감도가 높게 설정되어 있습니다. 보수적 기준에서는 부분 익절/축소 신호가 더 빨리 나옵니다.");
+    items.push("리스크 민감도가 높게 설정되어 있습니다. 1년 기준에서도 변동성보다 원금 훼손 가능성을 더 보수적으로 봅니다.");
   }
 
   if (totalScore >= 1 && rawNewsScore <= 0) {
-    items.push("점수는 유지권이지만 뉴스 모멘텀이 강하지 않습니다. 추세가 꺾이면 유지 기준을 다시 낮추세요.");
+    items.push("점수는 유지권이지만 뉴스 모멘텀이 강하지 않습니다. 보유 thesis를 지지하는 장기 촉매가 남아 있는지 확인하세요.");
   }
 
   checklist.innerHTML = items.map((item) => `<li>${sanitize(item)}</li>`).join("");

@@ -504,10 +504,10 @@ def count_matches(text: str, words: list[str]) -> int:
 
 def get_decision(score: int) -> dict:
     if score >= 5:
-        return {"label": "롱 유지", "className": "good"}
+        return {"label": "1년 롱 유지", "className": "good"}
     if score >= 1:
-        return {"label": "조건부 유지", "className": "warn"}
-    return {"label": "축소 검토", "className": "bad"}
+        return {"label": "1년 조건부 유지", "className": "warn"}
+    return {"label": "1년 기준 축소 검토", "className": "bad"}
 
 
 def get_sector_adjustment(theme: str, macro_score: int) -> int:
@@ -595,21 +595,21 @@ def format_signed(value: float) -> str:
 def build_checklist(total_score: int, news_score: int, concentration_penalty: float, risk: int) -> list[str]:
     items = []
     if total_score < 1:
-        items.append("롱 유지 근거가 약합니다. 신규 매수보다 손절선, 헤지, 비중 축소 기준을 먼저 확인하세요.")
+        items.append("1년 보유 근거가 약합니다. 단기 가격보다 매출/마진/현금흐름 전망이 훼손됐는지 먼저 확인하세요.")
     else:
-        items.append("롱 유지가 가능하더라도 다음 실적 발표와 주요 지표 발표 전후 변동성 계획을 세우세요.")
+        items.append("1년 롱 유지가 가능하더라도 다음 2~4개 분기 실적에서 확인할 핵심 지표를 미리 정하세요.")
 
     if news_score < 0:
-        items.append("부정 뉴스가 우세합니다. 일회성 이슈인지, 이익 전망 훼손인지 분리해서 보세요.")
+        items.append("부정 뉴스가 우세합니다. 일회성 가격 이슈인지, 1년 이익 전망을 낮추는 이슈인지 분리해서 보세요.")
 
     if concentration_penalty < -1:
-        items.append("집중 리스크가 큽니다. 같은 테마가 동시에 흔들릴 때의 최대 손실을 계산하세요.")
+        items.append("집중 리스크가 큽니다. 같은 테마가 1년 동안 부진할 때도 버틸 수 있는 비중인지 점검하세요.")
 
     if risk >= 4:
-        items.append("리스크 민감도가 높게 설정되어 있습니다. 보수적 기준에서는 부분 익절/축소 신호가 더 빨리 나옵니다.")
+        items.append("리스크 민감도가 높게 설정되어 있습니다. 1년 기준에서도 변동성보다 원금 훼손 가능성을 더 보수적으로 봅니다.")
 
     if total_score >= 1 and news_score <= 0:
-        items.append("점수는 유지권이지만 뉴스 모멘텀이 강하지 않습니다. 추세가 꺾이면 유지 기준을 다시 낮추세요.")
+        items.append("점수는 유지권이지만 뉴스 모멘텀이 강하지 않습니다. 보유 thesis를 지지하는 장기 촉매가 남아 있는지 확인하세요.")
 
     return items
 
@@ -651,10 +651,10 @@ def fetch_yahoo_market_data(ticker: str) -> dict:
     if current_price is not None and ma20:
         if current_price >= ma20 * 1.03:
             trend = "상승 추세"
-            trend_score = 2
+            trend_score = 1
         elif current_price <= ma20 * 0.97:
             trend = "하락 추세"
-            trend_score = -2
+            trend_score = -1
         else:
             trend = "중립 추세"
 
@@ -715,7 +715,7 @@ def score_from_trend(market: dict, positive_when_up: bool = True) -> int:
     trend_score = int(market.get("trendScore", 0))
     if not positive_when_up:
         trend_score *= -1
-    return 2 if trend_score > 0 else -2 if trend_score < 0 else 0
+    return 1 if trend_score > 0 else -1 if trend_score < 0 else 0
 
 
 def score_from_ratio(primary: dict, defensive: dict) -> int:
