@@ -289,7 +289,14 @@ KOREA_SYMBOLS = {
     "고배당주 etf": ("279530.KS", "KODEX 고배당주"),
     "고배당 etf": ("279530.KS", "KODEX 고배당주"),
     "tiger 코스피고배당": ("210780.KS", "TIGER 코스피고배당"),
-    "arirang 고배당주": ("161510.KS", "ARIRANG 고배당주"),
+    "plus 고배당주": ("161510.KS", "PLUS 고배당주"),
+    "plus고배당주": ("161510.KS", "PLUS 고배당주"),
+    "플러스 고배당주": ("161510.KS", "PLUS 고배당주"),
+    "플러스고배당주": ("161510.KS", "PLUS 고배당주"),
+    "한화 고배당주": ("161510.KS", "PLUS 고배당주"),
+    "한화 plus 고배당주": ("161510.KS", "PLUS 고배당주"),
+    "arirang 고배당주": ("161510.KS", "PLUS 고배당주"),
+    "arirang고배당주": ("161510.KS", "PLUS 고배당주"),
     "셀트리온": ("068270.KS", "셀트리온"),
     "lg에너지솔루션": ("373220.KS", "LG에너지솔루션"),
     "lg 엔솔": ("373220.KS", "LG에너지솔루션"),
@@ -471,6 +478,23 @@ def add_symbol_result(results: list[dict], seen: set[str], result: dict) -> None
     seen.add(ticker)
 
 
+def krx_query_variants(query: str) -> list[str]:
+    variants = [query]
+    compact = re.sub(r"\s+", "", query)
+    if compact != query:
+        variants.append(compact)
+    if "plus" in query.lower() or "플러스" in query:
+        variants.extend(
+            [
+                re.sub("plus", "ARIRANG", query, flags=re.IGNORECASE),
+                query.replace("플러스", "ARIRANG"),
+                compact.replace("plus", "ARIRANG").replace("PLUS", "ARIRANG").replace("플러스", "ARIRANG"),
+                query.replace("PLUS", "ARIRANG"),
+            ]
+        )
+    return list(dict.fromkeys(variant for variant in variants if variant.strip()))
+
+
 def search_krx_symbols(query: str) -> tuple[list[dict], str | None]:
     if not re.search(r"[가-힣]|\d{2,}", query):
         return [], None
@@ -478,51 +502,56 @@ def search_krx_symbols(query: str) -> tuple[list[dict], str | None]:
     if not KRX_API_KEY:
         return [], "KRX API 키 미설정"
 
-    params = {
-        "numOfRows": 10,
-        "pageNo": 1,
-        "resultType": "json",
-    }
-    if re.fullmatch(r"\d{2,6}", query):
-        params["likeSrtnCd"] = query
-    else:
-        params["likeItmsNm"] = query
-
     service_key = KRX_API_KEY if "%" in KRX_API_KEY else quote(KRX_API_KEY, safe="")
-    url = f"{KRX_LISTED_INFO_URL}?serviceKey={service_key}&{urlencode(params)}"
-    request = Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json",
-        },
-    )
-
-    with urlopen(request, timeout=8) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-
-    body = payload.get("response", {}).get("body", {})
-    raw_items = body.get("items", {}).get("item", [])
-    if isinstance(raw_items, dict):
-        raw_items = [raw_items]
-
     results = []
-    for item in raw_items:
-        short_code = str(item.get("srtnCd", "")).strip()
-        short_code = re.sub(r"^[A-Za-z]", "", short_code)
-        name = str(item.get("itmsNm", "")).strip()
-        market = str(item.get("mrktCtg", "")).strip()
-        if not short_code or not name:
-            continue
-        ticker = f"{short_code}{korean_market_suffix(market)}"
-        results.append(
-            {
-                "ticker": ticker,
-                "name": name,
-                "exchange": market,
-                "source": "KRX 공공데이터",
-            }
+    seen = set()
+    for variant in krx_query_variants(query):
+        params = {
+            "numOfRows": 10,
+            "pageNo": 1,
+            "resultType": "json",
+        }
+        if re.fullmatch(r"\d{2,6}", variant):
+            params["likeSrtnCd"] = variant
+        else:
+            params["likeItmsNm"] = variant
+
+        url = f"{KRX_LISTED_INFO_URL}?serviceKey={service_key}&{urlencode(params)}"
+        request = Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json",
+            },
         )
+
+        with urlopen(request, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        body = payload.get("response", {}).get("body", {})
+        raw_items = body.get("items", {}).get("item", [])
+        if isinstance(raw_items, dict):
+            raw_items = [raw_items]
+
+        for item in raw_items:
+            short_code = str(item.get("srtnCd", "")).strip()
+            short_code = re.sub(r"^[A-Za-z]", "", short_code)
+            name = str(item.get("itmsNm", "")).strip()
+            market = str(item.get("mrktCtg", "")).strip()
+            if not short_code or not name or short_code in seen:
+                continue
+            seen.add(short_code)
+            ticker = f"{short_code}{korean_market_suffix(market)}"
+            results.append(
+                {
+                    "ticker": ticker,
+                    "name": name,
+                    "exchange": market,
+                    "source": "KRX 공공데이터",
+                }
+            )
+            if len(results) >= 8:
+                return results, None
     return results, None
 
 
