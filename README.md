@@ -8,6 +8,7 @@
 - `app/index.html`: 웹앱 화면
 - `app/styles.css`: 디자인
 - `app/app.js`: 화면 상태, 이벤트 연결, 분석 결과 렌더링
+- `app/modules/analysis.js`: 브라우저 fallback용 점수 계산과 판단 기준
 - `app/modules/api.js`: 서버 API 호출
 - `app/modules/dom.js`: 화면 요소 참조
 - `app/modules/holdings.js`: 보유종목 파싱과 입력 문자열 변환
