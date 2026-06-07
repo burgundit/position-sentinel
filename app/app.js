@@ -426,7 +426,7 @@ function renderRows(rows) {
     .map((row) => {
       return `
         <tr>
-          <td><strong>${sanitize(row.ticker)}</strong><br><span class="muted">${sanitize(row.theme || "테마 미입력")}</span></td>
+          <td><strong>${sanitize(row.name || row.ticker)}</strong><br><span class="muted">${sanitize(row.ticker)} · ${sanitize(row.theme || "테마 미입력")}</span></td>
           <td>${row.weight || 0}%</td>
           <td class="market-cell">${renderMarketData(row.market)}</td>
           <td><span class="badge ${row.decision.className}">${row.decision.label}</span></td>
@@ -533,14 +533,16 @@ function loadState() {
 
 function loadSampleData() {
   holdingsInput.value = [
-    "NVDA, 40%, 반도체/AI",
-    "MSFT, 35%, 소프트웨어/클라우드",
-    "TSLA, 25%, 전기차"
+    "현대차, 20%, 자동차/배당",
+    "SK하이닉스, 20%, 반도체/AI",
+    "미래에셋증권, 20%, 증권/금융",
+    "삼성전자, 20%, 반도체/전자",
+    "KODEX 고배당주, 20%, 고배당주 ETF"
   ].join("\n");
   newsInput.value = [
-    "NVDA AI 수요 strong, 데이터센터 매출 성장 기대.",
-    "MSFT 클라우드 margin 개선 및 guidance 상향.",
-    "TSLA 전기차 수요 둔화 우려와 가격 인하 압박."
+    "현대차 배당 정책과 전기차 수요를 점검합니다.",
+    "SK하이닉스와 삼성전자는 메모리 업황 및 AI 수요를 확인합니다.",
+    "미래에셋증권과 고배당 ETF는 금리와 배당 매력을 함께 점검합니다."
   ].join("\n");
   rateSignal.value = "2";
   inflationSignal.value = "0";

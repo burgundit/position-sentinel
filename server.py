@@ -86,6 +86,46 @@ SECTOR_SENSITIVITY = {
     "소비재": 0.1,
 }
 
+KOREA_SYMBOLS = {
+    "현대차": ("005380.KS", "현대차"),
+    "현대자동차": ("005380.KS", "현대차"),
+    "sk하이닉스": ("000660.KS", "SK하이닉스"),
+    "하이닉스": ("000660.KS", "SK하이닉스"),
+    "미래에셋증권": ("006800.KS", "미래에셋증권"),
+    "미래에셋 증권": ("006800.KS", "미래에셋증권"),
+    "삼성전자": ("005930.KS", "삼성전자"),
+    "삼전": ("005930.KS", "삼성전자"),
+    "kodex 고배당주": ("279530.KS", "KODEX 고배당주"),
+    "kodex고배당주": ("279530.KS", "KODEX 고배당주"),
+    "고배당주 etf": ("279530.KS", "KODEX 고배당주"),
+    "고배당 etf": ("279530.KS", "KODEX 고배당주"),
+    "tiger 코스피고배당": ("210780.KS", "TIGER 코스피고배당"),
+    "arirang 고배당주": ("161510.KS", "ARIRANG 고배당주"),
+}
+
+KOREA_TICKER_NAMES = {
+    "005380.KS": "현대차",
+    "000660.KS": "SK하이닉스",
+    "006800.KS": "미래에셋증권",
+    "005930.KS": "삼성전자",
+    "279530.KS": "KODEX 고배당주",
+    "210780.KS": "TIGER 코스피고배당",
+    "161510.KS": "ARIRANG 고배당주",
+}
+
+
+def normalize_symbol(raw_symbol: str) -> tuple[str, str]:
+    symbol = raw_symbol.strip()
+    key = re.sub(r"\s+", " ", symbol.lower())
+    if key in KOREA_SYMBOLS:
+        return KOREA_SYMBOLS[key]
+
+    upper_symbol = symbol.upper()
+    if re.fullmatch(r"\d{6}", upper_symbol):
+        upper_symbol = f"{upper_symbol}.KS"
+
+    return upper_symbol, KOREA_TICKER_NAMES.get(upper_symbol, symbol)
+
 
 def parse_holdings(text: str) -> list[dict]:
     holdings = []
@@ -95,12 +135,12 @@ def parse_holdings(text: str) -> list[dict]:
             continue
 
         parts = [part.strip() for part in line.split(",")]
-        ticker = (parts[0] if parts else "UNKNOWN").upper()
+        ticker, name = normalize_symbol(parts[0] if parts else "UNKNOWN")
         weight_text = parts[1] if len(parts) > 1 else "0"
         weight_match = re.sub(r"[^0-9.]", "", weight_text)
         weight = float(weight_match) if weight_match else 0
         theme = parts[2].lower() if len(parts) > 2 else ""
-        holdings.append({"ticker": ticker, "weight": weight, "theme": theme})
+        holdings.append({"ticker": ticker, "name": name, "weight": weight, "theme": theme})
     return holdings
 
 
@@ -415,12 +455,14 @@ def build_news_memo(payload: dict) -> dict:
     for item in items:
         title = item.get("title", "")
         description = item.get("description", "")
+        name = KOREA_TICKER_NAMES.get(item["ticker"], item["ticker"])
+        label = f"{name} / {item['ticker']}"
         if item.get("error"):
-            lines.append(f"[{item['ticker']}] 뉴스 조회 실패: {description}")
+            lines.append(f"[{label}] 뉴스 조회 실패: {description}")
             continue
 
         detail = f" - {description}" if description and description != title else ""
-        lines.append(f"[{item['ticker']}] {title}{detail}")
+        lines.append(f"[{label}] {title}{detail}")
 
     memo = "\n".join(lines)
     return {
