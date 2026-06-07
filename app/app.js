@@ -146,7 +146,42 @@ function getDecision(score) {
   return { label: "축소 검토", className: "bad" };
 }
 
-function analyze() {
+function buildPayload() {
+  return {
+    holdings: holdingsInput.value,
+    news: newsInput.value,
+    risk: Number(riskSlider.value),
+    rateSignal: Number(rateSignal.value),
+    inflationSignal: Number(inflationSignal.value),
+    growthSignal: Number(growthSignal.value),
+    marketTrend: Number(marketTrend.value)
+  };
+}
+
+async function analyze() {
+  if (window.location.protocol !== "file:") {
+    try {
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildPayload())
+      });
+
+      if (!response.ok) {
+        throw new Error("analysis request failed");
+      }
+
+      const result = await response.json();
+      updateSummary(result.summary);
+      renderRows(result.rows);
+      renderChecklistItems(result.checklist);
+      saveState();
+      return;
+    } catch (error) {
+      console.warn("Python API unavailable. Falling back to browser analysis.", error);
+    }
+  }
+
   const holdings = parseHoldings(holdingsInput.value);
   const news = newsInput.value;
   const risk = Number(riskSlider.value);
@@ -194,7 +229,8 @@ function analyze() {
   saveState();
 }
 
-function updateSummary({ totalScore, macroScore, newsScore, concentrationPenalty, portfolioDecision, holdings }) {
+function updateSummary({ totalScore, macroScore, newsScore, concentrationPenalty, portfolioDecision, holdings, holdingsCount }) {
+  const count = holdings ? holdings.length : holdingsCount;
   portfolioBias.textContent = portfolioDecision.label;
   portfolioScore.textContent = totalScore;
   macroScoreEl.textContent = formatSigned(macroScore);
@@ -204,7 +240,7 @@ function updateSummary({ totalScore, macroScore, newsScore, concentrationPenalty
   decisionBand.className = `decision-band ${portfolioDecision.className}`;
   mainDecision.textContent = portfolioDecision.label;
   decisionReason.textContent =
-    `총 ${holdings.length}개 종목 기준입니다. 포트폴리오 점수는 ${totalScore}점이며, ` +
+    `총 ${count}개 종목 기준입니다. 포트폴리오 점수는 ${totalScore}점이며, ` +
     `거시 환경 ${formatSigned(macroScore)}, 뉴스 심리 ${formatSigned(newsScore)}, ` +
     `집중 리스크 ${formatSigned(Math.round(concentrationPenalty))}가 반영되었습니다.`;
 }
@@ -246,6 +282,10 @@ function renderChecklist({ totalScore, rawNewsScore, concentrationPenalty, risk 
     items.push("리스크 민감도가 높게 설정되어 있습니다. 보수적 기준에서는 부분 익절/축소 신호가 더 빨리 나옵니다.");
   }
 
+  checklist.innerHTML = items.map((item) => `<li>${sanitize(item)}</li>`).join("");
+}
+
+function renderChecklistItems(items) {
   checklist.innerHTML = items.map((item) => `<li>${sanitize(item)}</li>`).join("");
 }
 

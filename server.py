@@ -1,0 +1,245 @@
+from __future__ import annotations
+
+import json
+import mimetypes
+import re
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import unquote
+
+
+ROOT = Path(__file__).resolve().parent
+APP_DIR = ROOT / "app"
+HOST = "127.0.0.1"
+PORT = 8000
+
+POSITIVE_WORDS = [
+    "beat",
+    "upgrade",
+    "strong",
+    "growth",
+    "margin",
+    "guidance",
+    "contract",
+    "buyback",
+    "approval",
+    "surge",
+    "호조",
+    "상향",
+    "성장",
+    "개선",
+    "강세",
+    "수주",
+    "승인",
+    "흑자",
+    "증가",
+    "실적",
+]
+
+NEGATIVE_WORDS = [
+    "miss",
+    "downgrade",
+    "weak",
+    "lawsuit",
+    "recall",
+    "probe",
+    "cut",
+    "slowdown",
+    "ban",
+    "drop",
+    "부진",
+    "하향",
+    "소송",
+    "규제",
+    "리콜",
+    "둔화",
+    "감소",
+    "적자",
+    "하락",
+    "금지",
+]
+
+SECTOR_SENSITIVITY = {
+    "반도체": 1.0,
+    "ai": 1.0,
+    "소프트웨어": 0.8,
+    "클라우드": 0.8,
+    "전기차": 1.1,
+    "바이오": 1.2,
+    "은행": -0.2,
+    "에너지": 0.3,
+    "방산": 0.2,
+    "소비재": 0.1,
+}
+
+
+def parse_holdings(text: str) -> list[dict]:
+    holdings = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        parts = [part.strip() for part in line.split(",")]
+        ticker = (parts[0] if parts else "UNKNOWN").upper()
+        weight_text = parts[1] if len(parts) > 1 else "0"
+        weight_match = re.sub(r"[^0-9.]", "", weight_text)
+        weight = float(weight_match) if weight_match else 0
+        theme = parts[2].lower() if len(parts) > 2 else ""
+        holdings.append({"ticker": ticker, "weight": weight, "theme": theme})
+    return holdings
+
+
+def count_matches(text: str, words: list[str]) -> int:
+    lower = text.lower()
+    return sum(len(re.findall(re.escape(word.lower()), lower)) for word in words)
+
+
+def get_decision(score: int) -> dict:
+    if score >= 5:
+        return {"label": "롱 유지", "className": "good"}
+    if score >= 1:
+        return {"label": "조건부 유지", "className": "warn"}
+    return {"label": "축소 검토", "className": "bad"}
+
+
+def get_sector_adjustment(theme: str, macro_score: int) -> int:
+    sensitivity = sum(value for key, value in SECTOR_SENSITIVITY.items() if key in theme)
+    return round((macro_score * sensitivity) / 3)
+
+
+def get_concentration_penalty(holdings: list[dict], risk: int) -> float:
+    largest = max([holding["weight"] for holding in holdings], default=0)
+    overweight_penalty = -3 if largest > 45 else -2 if largest > 35 else -1 if largest > 25 else 0
+
+    sector_weights: dict[str, float] = {}
+    for holding in holdings:
+        key = (holding["theme"].split("/")[0] or "unknown").strip()
+        sector_weights[key] = sector_weights.get(key, 0) + holding["weight"]
+
+    max_sector = max(sector_weights.values(), default=0)
+    sector_penalty = -2 if max_sector > 60 else -1 if max_sector > 45 else 0
+    return (overweight_penalty + sector_penalty) * (risk / 3)
+
+
+def format_signed(value: float) -> str:
+    rounded = round(value)
+    return f"+{rounded}" if rounded > 0 else str(rounded)
+
+
+def build_checklist(total_score: int, news_score: int, concentration_penalty: float, risk: int) -> list[str]:
+    items = []
+    if total_score < 1:
+        items.append("롱 유지 근거가 약합니다. 신규 매수보다 손절선, 헤지, 비중 축소 기준을 먼저 확인하세요.")
+    else:
+        items.append("롱 유지가 가능하더라도 다음 실적 발표와 주요 지표 발표 전후 변동성 계획을 세우세요.")
+
+    if news_score < 0:
+        items.append("부정 뉴스가 우세합니다. 일회성 이슈인지, 이익 전망 훼손인지 분리해서 보세요.")
+
+    if concentration_penalty < -1:
+        items.append("집중 리스크가 큽니다. 같은 테마가 동시에 흔들릴 때의 최대 손실을 계산하세요.")
+
+    if risk >= 4:
+        items.append("리스크 민감도가 높게 설정되어 있습니다. 보수적 기준에서는 부분 익절/축소 신호가 더 빨리 나옵니다.")
+
+    return items
+
+
+def analyze_payload(payload: dict) -> dict:
+    holdings = parse_holdings(payload.get("holdings", ""))
+    news = payload.get("news", "")
+    risk = int(payload.get("risk", 3))
+    macro_score = sum(
+        int(payload.get(key, 0))
+        for key in ["rateSignal", "inflationSignal", "growthSignal", "marketTrend"]
+    )
+    news_score = count_matches(news, POSITIVE_WORDS) - count_matches(news, NEGATIVE_WORDS)
+    concentration_penalty = get_concentration_penalty(holdings, risk)
+
+    rows = []
+    for holding in holdings:
+        ticker_mentions = count_matches(news, [holding["ticker"]])
+        ticker_boost = min(3, ticker_mentions) if ticker_mentions else 0
+        sector_adjustment = get_sector_adjustment(holding["theme"], macro_score)
+        weight_penalty = -2 if holding["weight"] > 40 else -1 if holding["weight"] > 30 else 0
+        score = round(macro_score + news_score + sector_adjustment + ticker_boost + weight_penalty)
+        reasons = [
+            f"거시 {format_signed(macro_score)}",
+            f"뉴스 {format_signed(news_score)}",
+            f"섹터 민감도 {format_signed(sector_adjustment)}" if sector_adjustment else "섹터 중립",
+            f"비중 부담 {format_signed(weight_penalty)}" if weight_penalty else "비중 안정",
+        ]
+        rows.append({**holding, "score": score, "decision": get_decision(score), "reasons": reasons})
+
+    weight_sum = sum(row["weight"] or 1 for row in rows) or 1
+    average_position_score = sum(row["score"] * (row["weight"] or 1) for row in rows) / weight_sum
+    total_score = round(average_position_score + concentration_penalty)
+    portfolio_decision = get_decision(total_score)
+
+    return {
+        "summary": {
+            "totalScore": total_score,
+            "macroScore": macro_score,
+            "newsScore": news_score,
+            "concentrationPenalty": concentration_penalty,
+            "portfolioDecision": portfolio_decision,
+            "holdingsCount": len(holdings),
+        },
+        "rows": rows,
+        "checklist": build_checklist(total_score, news_score, concentration_penalty, risk),
+    }
+
+
+class PositionSentinelHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        path = unquote(self.path.split("?", 1)[0])
+        if path == "/":
+            path = "/index.html"
+
+        target = (APP_DIR / path.lstrip("/")).resolve()
+        if not str(target).startswith(str(APP_DIR.resolve())) or not target.exists() or not target.is_file():
+            self.send_error(404)
+            return
+
+        content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        data = target.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", f"{content_type}; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_POST(self) -> None:
+        if self.path != "/api/analyze":
+            self.send_error(404)
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            result = analyze_payload(payload)
+            self.write_json(200, result)
+        except Exception as exc:
+            self.write_json(400, {"error": str(exc)})
+
+    def write_json(self, status: int, data: dict) -> None:
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args) -> None:
+        return
+
+
+def main() -> None:
+    server = ThreadingHTTPServer((HOST, PORT), PositionSentinelHandler)
+    print(f"Long Position Sentinel is running at http://{HOST}:{PORT}")
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

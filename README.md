@@ -12,7 +12,25 @@
 
 ## 지금 실행하기
 
-웹앱은 별도 서버 없이 바로 열 수 있습니다.
+웹앱은 Python 서버로 실행하는 방식을 권장합니다.
+
+```powershell
+python server.py
+```
+
+또는 Windows에서 아래 파일을 더블클릭해도 됩니다.
+
+```text
+run_server.bat
+```
+
+브라우저에서 아래 주소를 엽니다.
+
+```text
+http://127.0.0.1:8000
+```
+
+서버 없이 파일로만 열 수도 있습니다.
 
 ```powershell
 start app\index.html
@@ -31,5 +49,5 @@ python main.py
 2. 첫 커밋 만들기
 3. GitHub 저장소 생성
 4. 이 프로젝트를 GitHub에 연결
-5. Python 백엔드 추가
-6. 뉴스/경제지표 API 연결
+5. 뉴스/경제지표 API 연결
+6. 보유 종목 저장 기능 추가
