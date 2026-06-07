@@ -509,6 +509,7 @@ def search_krx_symbols(query: str) -> tuple[list[dict], str | None]:
     results = []
     for item in raw_items:
         short_code = str(item.get("srtnCd", "")).strip()
+        short_code = re.sub(r"^[A-Za-z]", "", short_code)
         name = str(item.get("itmsNm", "")).strip()
         market = str(item.get("mrktCtg", "")).strip()
         if not short_code or not name:
