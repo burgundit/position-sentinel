@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import re
 import time
 from html import unescape
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, unquote, urlsplit
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
@@ -28,6 +29,8 @@ NEWS_PER_TICKER = 3
 NEWS_DESCRIPTION_LIMIT = 220
 SYMBOL_SEARCH_CACHE: dict[str, tuple[float, tuple[str, str]]] = {}
 SYMBOL_SEARCH_CACHE_SECONDS = 86400
+KRX_API_KEY = os.environ.get("DATA_GO_KR_API_KEY") or os.environ.get("KRX_API_KEY")
+KRX_LISTED_INFO_URL = "https://apis.data.go.kr/1160100/service/GetKrxListedInfoService/getItemInfo"
 
 POSITIVE_WORDS = [
     "beat",
@@ -452,6 +455,76 @@ def search_yahoo_symbol(query: str) -> tuple[str, str] | None:
     return result
 
 
+def korean_market_suffix(market_category: str) -> str:
+    market = (market_category or "").lower()
+    if "kosdaq" in market or "코스닥" in market:
+        return ".KQ"
+    return ".KS"
+
+
+def add_symbol_result(results: list[dict], seen: set[str], result: dict) -> None:
+    ticker = str(result.get("ticker", "")).upper()
+    if not ticker or ticker in seen:
+        return
+    result["ticker"] = ticker
+    results.append(result)
+    seen.add(ticker)
+
+
+def search_krx_symbols(query: str) -> tuple[list[dict], str | None]:
+    if not re.search(r"[가-힣]|\d{2,}", query):
+        return [], None
+
+    if not KRX_API_KEY:
+        return [], "KRX API 키 미설정"
+
+    params = {
+        "numOfRows": 10,
+        "pageNo": 1,
+        "resultType": "json",
+    }
+    if re.fullmatch(r"\d{2,6}", query):
+        params["likeSrtnCd"] = query
+    else:
+        params["likeItmsNm"] = query
+
+    service_key = KRX_API_KEY if "%" in KRX_API_KEY else quote(KRX_API_KEY, safe="")
+    url = f"{KRX_LISTED_INFO_URL}?serviceKey={service_key}&{urlencode(params)}"
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        },
+    )
+
+    with urlopen(request, timeout=8) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    body = payload.get("response", {}).get("body", {})
+    raw_items = body.get("items", {}).get("item", [])
+    if isinstance(raw_items, dict):
+        raw_items = [raw_items]
+
+    results = []
+    for item in raw_items:
+        short_code = str(item.get("srtnCd", "")).strip()
+        name = str(item.get("itmsNm", "")).strip()
+        market = str(item.get("mrktCtg", "")).strip()
+        if not short_code or not name:
+            continue
+        ticker = f"{short_code}{korean_market_suffix(market)}"
+        results.append(
+            {
+                "ticker": ticker,
+                "name": name,
+                "exchange": market,
+                "source": "KRX 공공데이터",
+            }
+        )
+    return results, None
+
+
 def search_symbols(query: str) -> dict:
     normalized_query = re.sub(r"\s+", " ", query.strip())
     if len(normalized_query) < 2:
@@ -460,12 +533,17 @@ def search_symbols(query: str) -> dict:
     results: list[dict] = []
     seen: set[str] = set()
     key = normalized_query.lower()
+    source_notes = []
+
+    krx_results, krx_note = search_krx_symbols(normalized_query)
+    if krx_note:
+        source_notes.append(krx_note)
+    for result in krx_results:
+        add_symbol_result(results, seen, result)
 
     for alias, (ticker, name) in KOREA_SYMBOLS.items():
         if key in alias.lower() or key in name.lower() or key in ticker.lower():
-            if ticker not in seen:
-                results.append({"ticker": ticker, "name": name, "source": "내장 별칭"})
-                seen.add(ticker)
+            add_symbol_result(results, seen, {"ticker": ticker, "name": name, "source": "내장 별칭"})
 
     try:
         url = f"https://query1.finance.yahoo.com/v1/finance/search?q={quote(normalized_query)}&quotesCount=10&newsCount=0"
@@ -489,12 +567,13 @@ def search_symbols(query: str) -> dict:
 
         for item in quotes:
             ticker = str(item["symbol"]).upper()
-            if ticker in seen:
-                continue
             name = item.get("shortname") or item.get("longname") or ticker
             exchange = item.get("exchDisp") or item.get("exchange") or ""
-            results.append({"ticker": ticker, "name": name, "exchange": exchange, "source": "Yahoo Finance"})
-            seen.add(ticker)
+            add_symbol_result(
+                results,
+                seen,
+                {"ticker": ticker, "name": name, "exchange": exchange, "source": "Yahoo Finance"},
+            )
             if len(results) >= 8:
                 break
     except Exception:
@@ -503,11 +582,14 @@ def search_symbols(query: str) -> dict:
     if not results:
         try:
             ticker, name = normalize_symbol(normalized_query)
-            results.append({"ticker": ticker, "name": name, "source": "입력값 변환"})
+            add_symbol_result(results, seen, {"ticker": ticker, "name": name, "source": "입력값 변환"})
         except Exception:
             pass
 
-    return {"query": query, "results": results[:8], "message": f"{len(results[:8])}개 후보를 찾았습니다."}
+    message = f"{len(results[:8])}개 후보를 찾았습니다."
+    if source_notes:
+        message += f" ({', '.join(source_notes)})"
+    return {"query": query, "results": results[:8], "message": message, "krxEnabled": bool(KRX_API_KEY)}
 
 
 def normalize_symbol(raw_symbol: str) -> tuple[str, str]:
