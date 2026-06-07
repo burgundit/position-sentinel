@@ -1,38 +1,49 @@
-const holdingsInput = document.querySelector("#holdingsInput");
-const newsInput = document.querySelector("#newsInput");
-const riskSlider = document.querySelector("#riskSlider");
-const riskValue = document.querySelector("#riskValue");
-const analyzeButton = document.querySelector("#analyzeButton");
-const loadSample = document.querySelector("#loadSample");
-const savePortfolio = document.querySelector("#savePortfolio");
-const loadPortfolio = document.querySelector("#loadPortfolio");
-const marketDataToggle = document.querySelector("#marketDataToggle");
-const autoEnvironment = document.querySelector("#autoEnvironment");
-const autoNews = document.querySelector("#autoNews");
-const symbolSearchInput = document.querySelector("#symbolSearchInput");
-const symbolSearchButton = document.querySelector("#symbolSearchButton");
-const symbolSearchStatus = document.querySelector("#symbolSearchStatus");
-const symbolSearchResults = document.querySelector("#symbolSearchResults");
-const holdingsEditor = document.querySelector("#holdingsEditor");
-const rebalanceEqual = document.querySelector("#rebalanceEqual");
-const rateSignal = document.querySelector("#rateSignal");
-const inflationSignal = document.querySelector("#inflationSignal");
-const growthSignal = document.querySelector("#growthSignal");
-const marketTrend = document.querySelector("#marketTrend");
-
-const portfolioBias = document.querySelector("#portfolioBias");
-const portfolioScore = document.querySelector("#portfolioScore");
-const macroScoreEl = document.querySelector("#macroScore");
-const newsScoreEl = document.querySelector("#newsScore");
-const concentrationScoreEl = document.querySelector("#concentrationScore");
-const decisionBand = document.querySelector("#decisionBand");
-const mainDecision = document.querySelector("#mainDecision");
-const decisionReason = document.querySelector("#decisionReason");
-const positionsTable = document.querySelector("#positionsTable");
-const checklist = document.querySelector("#checklist");
-const storageStatus = document.querySelector("#storageStatus");
-const environmentStatus = document.querySelector("#environmentStatus");
-const newsStatus = document.querySelector("#newsStatus");
+import {
+  analyzeButton,
+  autoEnvironment,
+  autoNews,
+  checklist,
+  concentrationScoreEl,
+  decisionBand,
+  decisionReason,
+  environmentStatus,
+  growthSignal,
+  holdingsEditor,
+  holdingsInput,
+  inflationSignal,
+  loadPortfolio,
+  loadSample,
+  macroScoreEl,
+  mainDecision,
+  marketDataToggle,
+  marketTrend,
+  newsInput,
+  newsScoreEl,
+  newsStatus,
+  portfolioBias,
+  portfolioScore,
+  positionsTable,
+  rateSignal,
+  rebalanceEqual,
+  riskSlider,
+  riskValue,
+  savePortfolio,
+  storageStatus,
+  symbolSearchButton,
+  symbolSearchInput,
+  symbolSearchResults,
+  symbolSearchStatus
+} from "./modules/dom.js";
+import {
+  analyzePortfolio,
+  canUseServerStorage,
+  getEnvironmentSuggestion,
+  getNewsMemo,
+  loadPortfolioData as loadPortfolioFromApi,
+  savePortfolioData as savePortfolioToApi,
+  searchSymbolCandidates
+} from "./modules/api.js";
+import { clamp, countMatches, formatSigned, sanitize } from "./modules/utils.js";
 
 const positiveWords = [
   "beat",
@@ -514,18 +525,6 @@ function rebalanceEditorHoldings() {
   syncTextFromEditor();
 }
 
-function countMatches(text, words) {
-  const lower = text.toLowerCase();
-  return words.reduce((total, word) => {
-    const pattern = new RegExp(escapeRegExp(word.toLowerCase()), "g");
-    return total + (lower.match(pattern) || []).length;
-  }, 0);
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function getMacroScore() {
   return [rateSignal, inflationSignal, growthSignal, marketTrend].reduce(
     (sum, input) => sum + Number(input.value),
@@ -559,10 +558,6 @@ function getSectorAdjustment(theme, macroScore) {
   }, 0);
 
   return Math.round((macroScore * sensitivity) / 3);
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
 }
 
 function getPositionProfile(holding) {
@@ -644,10 +639,6 @@ function buildPayload() {
   };
 }
 
-function canUseServerStorage() {
-  return window.location.protocol !== "file:";
-}
-
 function setStorageStatus(message, state = "") {
   storageStatus.textContent = message;
   storageStatus.className = state ? `storage-status ${state}` : "storage-status";
@@ -713,12 +704,7 @@ async function searchSymbols() {
   setSymbolSearchStatus("종목 후보를 조회하고 있습니다.");
 
   try {
-    const response = await fetch(`/api/symbol-search?q=${encodeURIComponent(query)}`);
-    if (!response.ok) {
-      throw new Error("symbol search failed");
-    }
-
-    const payload = await response.json();
+    const payload = await searchSymbolCandidates(query);
     renderSymbolResults(payload.results || []);
     setSymbolSearchStatus(payload.message || "조회가 완료되었습니다.", payload.results?.length ? "good" : "bad");
   } catch (error) {
@@ -752,16 +738,7 @@ async function savePortfolioData() {
   }
 
   try {
-    const response = await fetch("/api/portfolio", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      throw new Error("save request failed");
-    }
-
+    await savePortfolioToApi(payload);
     setStorageStatus("보유 종목을 서버 파일에 저장했습니다.", "good");
   } catch (error) {
     localStorage.setItem("positionSentinelPortfolio", JSON.stringify(payload));
@@ -783,12 +760,7 @@ async function loadPortfolioData() {
   }
 
   try {
-    const response = await fetch("/api/portfolio");
-    if (!response.ok) {
-      throw new Error("load request failed");
-    }
-
-    const portfolio = await response.json();
+    const portfolio = await loadPortfolioFromApi();
     if (!portfolio.holdings) {
       setStorageStatus("저장된 보유 종목이 없습니다.", "bad");
       return;
@@ -813,12 +785,7 @@ async function applyAutoEnvironment() {
   setEnvironmentStatus("시장 프록시를 조회하고 있습니다.");
 
   try {
-    const response = await fetch("/api/environment");
-    if (!response.ok) {
-      throw new Error("environment request failed");
-    }
-
-    const result = await response.json();
+    const result = await getEnvironmentSuggestion();
     rateSignal.value = String(result.signals.rateSignal ?? 0);
     inflationSignal.value = String(result.signals.inflationSignal ?? 0);
     growthSignal.value = String(result.signals.growthSignal ?? 0);
@@ -852,17 +819,7 @@ async function applyAutoNews() {
   setNewsStatus("보유 종목 기준 뉴스를 가져오고 있습니다.");
 
   try {
-    const response = await fetch("/api/news", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ holdings: holdingsInput.value })
-    });
-
-    if (!response.ok) {
-      throw new Error("news request failed");
-    }
-
-    const result = await response.json();
+    const result = await getNewsMemo(holdingsInput.value);
     if (!result.memo) {
       setNewsStatus(result.message || "가져온 뉴스가 없습니다.", "bad");
       return;
@@ -882,17 +839,7 @@ async function applyAutoNews() {
 async function analyze() {
   if (window.location.protocol !== "file:") {
     try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildPayload())
-      });
-
-      if (!response.ok) {
-        throw new Error("analysis request failed");
-      }
-
-      const result = await response.json();
+      const result = await analyzePortfolio(buildPayload());
       updateSummary(result.summary);
       renderRows(result.rows);
       renderChecklistItems(result.checklist);
@@ -1042,20 +989,6 @@ function renderChecklist({ totalScore, rawNewsScore, concentrationPenalty, risk 
 
 function renderChecklistItems(items) {
   checklist.innerHTML = items.map((item) => `<li>${sanitize(item)}</li>`).join("");
-}
-
-function formatSigned(value) {
-  const rounded = Math.round(value);
-  return rounded > 0 ? `+${rounded}` : `${rounded}`;
-}
-
-function sanitize(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 }
 
 function saveState() {

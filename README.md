@@ -7,7 +7,10 @@
 
 - `app/index.html`: 웹앱 화면
 - `app/styles.css`: 디자인
-- `app/app.js`: 화면 상태, 저장/불러오기, 분석 결과 렌더링
+- `app/app.js`: 화면 상태, 이벤트 연결, 분석 결과 렌더링
+- `app/modules/api.js`: 서버 API 호출
+- `app/modules/dom.js`: 화면 요소 참조
+- `app/modules/utils.js`: 공통 포맷/문자열 유틸
 - `server.py`: Python 서버, 분석 API, 포트폴리오 저장 API, Yahoo Finance 조회
 - `run_server.bat`: Windows 실행용 서버 시작 파일
 - `main.py`: Python 개발환경 테스트 파일
