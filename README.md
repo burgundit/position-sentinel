@@ -39,6 +39,15 @@ run_server.bat
 http://127.0.0.1:8000
 ```
 
+## VS Code 작업환경
+
+저장소에는 `.vscode/` 기본 설정이 포함되어 있습니다.
+
+- `Run server`: VS Code 작업 실행 메뉴에서 Python 서버를 시작합니다.
+- `Check Python syntax`: `server.py`, `main.py` 문법을 빠르게 확인합니다.
+- `Git status`: 현재 Git 변경 상태를 확인합니다.
+- Python 인터프리터는 `.venv\Scripts\python.exe`를 기본값으로 잡습니다.
+
 서버로 실행하면 `저장` 버튼으로 보유 종목과 지표 설정을 저장하고, `불러오기` 버튼으로 다시 가져올 수 있습니다.
 저장 파일은 `data/portfolio.json`에 만들어지며 GitHub에는 올라가지 않습니다.
 

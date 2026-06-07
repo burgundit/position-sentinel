@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run server",
+      "type": "shell",
+      "command": ".venv\\Scripts\\python.exe",
+      "args": ["server.py"],
+      "isBackground": true,
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Check Python syntax",
+      "type": "shell",
+      "command": ".venv\\Scripts\\python.exe",
+      "args": ["-m", "py_compile", "server.py", "main.py"],
+      "problemMatcher": "$python"
+    },
+    {
+      "label": "Git status",
+      "type": "shell",
+      "command": "git",
+      "args": ["status", "--short", "--branch"],
+      "problemMatcher": []
+    }
+  ]
+}
