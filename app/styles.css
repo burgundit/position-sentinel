@@ -143,8 +143,8 @@ h2 {
 }
 
 .mini-button {
-  min-height: 34px;
-  padding: 0 10px;
+  min-height: 32px;
+  padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--accent-strong);
@@ -152,6 +152,22 @@ h2 {
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
+}
+
+.assist-button {
+  min-width: 72px;
+  min-height: 30px;
+  padding: 0 11px;
+  border-color: #cfdcdd;
+  color: #31566a;
+  background: #f5f9f9;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.assist-button:hover {
+  border-color: #aebfc3;
+  background: #edf4f5;
 }
 
 .storage-status {
@@ -174,12 +190,11 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   margin-bottom: -10px;
 }
 
 .subhead-row span {
-  position: relative;
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
@@ -214,6 +229,7 @@ h2 {
   top: calc(100% + 8px);
   z-index: 20;
   width: min(280px, 78vw);
+  max-width: 280px;
   padding: 10px 12px;
   border: 1px solid #cdd8d5;
   border-radius: 8px;
@@ -227,6 +243,11 @@ h2 {
   pointer-events: none;
   transform: translateY(-3px);
   transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.tip-box-right {
+  right: 0;
+  left: auto;
 }
 
 .tip:hover + .tip-box,
@@ -509,6 +530,14 @@ td {
 @media (max-width: 560px) {
   .grid-two {
     grid-template-columns: 1fr;
+  }
+
+  .subhead-row {
+    align-items: flex-start;
+  }
+
+  .assist-button {
+    min-width: 66px;
   }
 
   .decision-band {
