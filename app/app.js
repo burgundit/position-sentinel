@@ -8,6 +8,7 @@ const savePortfolio = document.querySelector("#savePortfolio");
 const loadPortfolio = document.querySelector("#loadPortfolio");
 const marketDataToggle = document.querySelector("#marketDataToggle");
 const autoEnvironment = document.querySelector("#autoEnvironment");
+const autoNews = document.querySelector("#autoNews");
 const rateSignal = document.querySelector("#rateSignal");
 const inflationSignal = document.querySelector("#inflationSignal");
 const growthSignal = document.querySelector("#growthSignal");
@@ -25,6 +26,7 @@ const positionsTable = document.querySelector("#positionsTable");
 const checklist = document.querySelector("#checklist");
 const storageStatus = document.querySelector("#storageStatus");
 const environmentStatus = document.querySelector("#environmentStatus");
+const newsStatus = document.querySelector("#newsStatus");
 
 const positiveWords = [
   "beat",
@@ -179,6 +181,11 @@ function setEnvironmentStatus(message, state = "") {
   environmentStatus.className = state ? `storage-status ${state}` : "storage-status";
 }
 
+function setNewsStatus(message, state = "") {
+  newsStatus.textContent = message;
+  newsStatus.className = state ? `storage-status ${state}` : "storage-status";
+}
+
 function applyPortfolio(portfolio) {
   holdingsInput.value = portfolio.holdings || "";
   riskSlider.value = String(portfolio.risk ?? "3");
@@ -281,6 +288,49 @@ async function applyAutoEnvironment() {
   } finally {
     autoEnvironment.disabled = false;
     autoEnvironment.textContent = "자동 입력";
+  }
+}
+
+async function applyAutoNews() {
+  if (!holdingsInput.value.trim()) {
+    setNewsStatus("보유 종목을 먼저 입력하세요.", "bad");
+    return;
+  }
+
+  if (!canUseServerStorage()) {
+    setNewsStatus("서버 실행 화면에서만 뉴스 자동 입력을 사용할 수 있습니다.", "bad");
+    return;
+  }
+
+  autoNews.disabled = true;
+  autoNews.textContent = "조회 중";
+  setNewsStatus("보유 종목 기준 뉴스를 가져오고 있습니다.");
+
+  try {
+    const response = await fetch("/api/news", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ holdings: holdingsInput.value })
+    });
+
+    if (!response.ok) {
+      throw new Error("news request failed");
+    }
+
+    const result = await response.json();
+    if (!result.memo) {
+      setNewsStatus(result.message || "가져온 뉴스가 없습니다.", "bad");
+      return;
+    }
+
+    newsInput.value = result.memo;
+    setNewsStatus(result.message || "뉴스 메모를 자동 입력했습니다.", "good");
+    saveState();
+  } catch (error) {
+    setNewsStatus("뉴스 자동 입력에 실패했습니다. 수동 메모를 유지합니다.", "bad");
+  } finally {
+    autoNews.disabled = false;
+    autoNews.textContent = "뉴스 자동";
   }
 }
 
@@ -510,6 +560,7 @@ loadSample.addEventListener("click", loadSampleData);
 savePortfolio.addEventListener("click", savePortfolioData);
 loadPortfolio.addEventListener("click", loadPortfolioData);
 autoEnvironment.addEventListener("click", applyAutoEnvironment);
+autoNews.addEventListener("click", applyAutoNews);
 
 loadState();
 if (holdingsInput.value.trim()) {

@@ -4,11 +4,13 @@ import json
 import mimetypes
 import re
 import time
+from html import unescape
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, unquote
 from urllib.request import Request, urlopen
+from xml.etree import ElementTree
 
 
 ROOT = Path(__file__).resolve().parent
@@ -20,6 +22,10 @@ PORT = 8000
 MARKET_CACHE: dict[str, tuple[float, dict]] = {}
 MARKET_CACHE_SECONDS = 300
 MARKET_MAX_WORKERS = 6
+NEWS_CACHE: dict[str, tuple[float, list[dict]]] = {}
+NEWS_CACHE_SECONDS = 600
+NEWS_PER_TICKER = 3
+NEWS_DESCRIPTION_LIMIT = 220
 
 POSITIVE_WORDS = [
     "beat",
@@ -322,6 +328,109 @@ def build_environment_suggestion() -> dict:
     }
 
 
+def strip_markup(value: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", value or "")
+    text = unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def truncate_text(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return value[: limit - 3].rstrip() + "..."
+
+
+def fetch_yahoo_news(ticker: str) -> list[dict]:
+    now = time.time()
+    cached = NEWS_CACHE.get(ticker)
+    if cached and now - cached[0] < NEWS_CACHE_SECONDS:
+        return cached[1]
+
+    url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={quote(ticker)}&region=US&lang=en-US"
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/rss+xml, application/xml, text/xml",
+        },
+    )
+
+    with urlopen(request, timeout=8) as response:
+        xml_text = response.read().decode("utf-8", errors="replace")
+
+    root = ElementTree.fromstring(xml_text)
+    items = []
+    for item in root.findall(".//item")[:NEWS_PER_TICKER]:
+        title = strip_markup(item.findtext("title", ""))
+        description = truncate_text(strip_markup(item.findtext("description", "")), NEWS_DESCRIPTION_LIMIT)
+        link = item.findtext("link", "").strip()
+        published = item.findtext("pubDate", "").strip()
+        if title:
+            items.append(
+                {
+                    "ticker": ticker,
+                    "title": title,
+                    "description": description,
+                    "link": link,
+                    "published": published,
+                    "source": "Yahoo Finance",
+                }
+            )
+
+    NEWS_CACHE[ticker] = (now, items)
+    return items
+
+
+def get_news_for_ticker(ticker: str) -> list[dict]:
+    try:
+        return fetch_yahoo_news(ticker)
+    except Exception as exc:
+        return [
+            {
+                "ticker": ticker,
+                "title": "뉴스 조회 실패",
+                "description": str(exc),
+                "link": "",
+                "published": "",
+                "source": "Yahoo Finance",
+                "error": True,
+            }
+        ]
+
+
+def build_news_memo(payload: dict) -> dict:
+    holdings = parse_holdings(payload.get("holdings", ""))
+    tickers = sorted({holding["ticker"] for holding in holdings if holding.get("ticker")})
+    if not tickers:
+        return {"memo": "", "items": [], "message": "보유 종목을 먼저 입력하세요."}
+
+    items: list[dict] = []
+    with ThreadPoolExecutor(max_workers=min(MARKET_MAX_WORKERS, len(tickers))) as executor:
+        futures = {executor.submit(get_news_for_ticker, ticker): ticker for ticker in tickers}
+        for future in as_completed(futures):
+            items.extend(future.result())
+
+    items.sort(key=lambda item: (item.get("ticker", ""), item.get("published", "")))
+    lines = []
+    for item in items:
+        title = item.get("title", "")
+        description = item.get("description", "")
+        if item.get("error"):
+            lines.append(f"[{item['ticker']}] 뉴스 조회 실패: {description}")
+            continue
+
+        detail = f" - {description}" if description and description != title else ""
+        lines.append(f"[{item['ticker']}] {title}{detail}")
+
+    memo = "\n".join(lines)
+    return {
+        "memo": memo,
+        "items": items,
+        "message": f"{len(tickers)}개 종목에서 뉴스 {len(items)}건을 가져왔습니다.",
+        "source": "Yahoo Finance RSS",
+    }
+
+
 def analyze_payload(payload: dict) -> dict:
     holdings = parse_holdings(payload.get("holdings", ""))
     news = payload.get("news", "")
@@ -456,6 +565,13 @@ class PositionSentinelHandler(BaseHTTPRequestHandler):
             try:
                 portfolio = save_portfolio(read_json_body(self))
                 self.write_json(200, {"saved": True, "portfolio": portfolio})
+            except Exception as exc:
+                self.write_json(400, {"error": str(exc)})
+            return
+
+        if self.path == "/api/news":
+            try:
+                self.write_json(200, build_news_memo(read_json_body(self)))
             except Exception as exc:
                 self.write_json(400, {"error": str(exc)})
             return
