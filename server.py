@@ -4,6 +4,7 @@ import json
 import mimetypes
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, unquote
@@ -18,6 +19,7 @@ HOST = "127.0.0.1"
 PORT = 8000
 MARKET_CACHE: dict[str, tuple[float, dict]] = {}
 MARKET_CACHE_SECONDS = 300
+MARKET_MAX_WORKERS = 6
 
 POSITIVE_WORDS = [
     "beat",
@@ -224,6 +226,31 @@ def get_market_data(ticker: str, enabled: bool) -> dict:
         }
 
 
+def get_market_data_map(holdings: list[dict], enabled: bool) -> dict[str, dict]:
+    tickers = sorted({holding["ticker"] for holding in holdings if holding.get("ticker")})
+    if not tickers:
+        return {}
+
+    if not enabled:
+        return {ticker: {"status": "disabled", "trendScore": 0} for ticker in tickers}
+
+    market_data: dict[str, dict] = {}
+    worker_count = min(MARKET_MAX_WORKERS, len(tickers))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = {executor.submit(get_market_data, ticker, True): ticker for ticker in tickers}
+        for future in as_completed(futures):
+            ticker = futures[future]
+            try:
+                market_data[ticker] = future.result()
+            except Exception as exc:
+                market_data[ticker] = {
+                    "status": "unavailable",
+                    "trendScore": 0,
+                    "message": str(exc),
+                }
+    return market_data
+
+
 def analyze_payload(payload: dict) -> dict:
     holdings = parse_holdings(payload.get("holdings", ""))
     news = payload.get("news", "")
@@ -235,10 +262,11 @@ def analyze_payload(payload: dict) -> dict:
     )
     news_score = count_matches(news, POSITIVE_WORDS) - count_matches(news, NEGATIVE_WORDS)
     concentration_penalty = get_concentration_penalty(holdings, risk)
+    market_data_by_ticker = get_market_data_map(holdings, include_market_data)
 
     rows = []
     for holding in holdings:
-        market = get_market_data(holding["ticker"], include_market_data)
+        market = market_data_by_ticker.get(holding["ticker"], {"status": "unavailable", "trendScore": 0})
         ticker_mentions = count_matches(news, [holding["ticker"]])
         ticker_boost = min(3, ticker_mentions) if ticker_mentions else 0
         sector_adjustment = get_sector_adjustment(holding["theme"], macro_score)
