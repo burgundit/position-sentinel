@@ -119,6 +119,7 @@ h2 {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
 .icon-button {
@@ -131,6 +132,42 @@ h2 {
   color: var(--accent-strong);
   background: #f8faf8;
   cursor: pointer;
+}
+
+.button-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.mini-button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--accent-strong);
+  background: #f8faf8;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.storage-status {
+  margin: -6px 0 0;
+  min-height: 20px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.storage-status.good {
+  color: var(--good);
+}
+
+.storage-status.bad {
+  color: var(--bad);
 }
 
 label {

@@ -4,6 +4,8 @@ const riskSlider = document.querySelector("#riskSlider");
 const riskValue = document.querySelector("#riskValue");
 const analyzeButton = document.querySelector("#analyzeButton");
 const loadSample = document.querySelector("#loadSample");
+const savePortfolio = document.querySelector("#savePortfolio");
+const loadPortfolio = document.querySelector("#loadPortfolio");
 const rateSignal = document.querySelector("#rateSignal");
 const inflationSignal = document.querySelector("#inflationSignal");
 const growthSignal = document.querySelector("#growthSignal");
@@ -19,6 +21,7 @@ const mainDecision = document.querySelector("#mainDecision");
 const decisionReason = document.querySelector("#decisionReason");
 const positionsTable = document.querySelector("#positionsTable");
 const checklist = document.querySelector("#checklist");
+const storageStatus = document.querySelector("#storageStatus");
 
 const positiveWords = [
   "beat",
@@ -156,6 +159,85 @@ function buildPayload() {
     growthSignal: Number(growthSignal.value),
     marketTrend: Number(marketTrend.value)
   };
+}
+
+function canUseServerStorage() {
+  return window.location.protocol !== "file:";
+}
+
+function setStorageStatus(message, state = "") {
+  storageStatus.textContent = message;
+  storageStatus.className = state ? `storage-status ${state}` : "storage-status";
+}
+
+function applyPortfolio(portfolio) {
+  holdingsInput.value = portfolio.holdings || "";
+  riskSlider.value = String(portfolio.risk ?? "3");
+  rateSignal.value = String(portfolio.rateSignal ?? "0");
+  inflationSignal.value = String(portfolio.inflationSignal ?? "0");
+  growthSignal.value = String(portfolio.growthSignal ?? "0");
+  marketTrend.value = String(portfolio.marketTrend ?? "0");
+  riskValue.value = riskSlider.value;
+}
+
+async function savePortfolioData() {
+  const payload = buildPayload();
+
+  if (!canUseServerStorage()) {
+    localStorage.setItem("positionSentinelPortfolio", JSON.stringify(payload));
+    setStorageStatus("브라우저에 보유 종목을 저장했습니다.", "good");
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/portfolio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error("save request failed");
+    }
+
+    setStorageStatus("보유 종목을 서버 파일에 저장했습니다.", "good");
+  } catch (error) {
+    localStorage.setItem("positionSentinelPortfolio", JSON.stringify(payload));
+    setStorageStatus("서버 저장이 안 되어 브라우저에 임시 저장했습니다.", "bad");
+  }
+}
+
+async function loadPortfolioData() {
+  if (!canUseServerStorage()) {
+    const portfolio = JSON.parse(localStorage.getItem("positionSentinelPortfolio") || "null");
+    if (!portfolio) {
+      setStorageStatus("저장된 보유 종목이 없습니다.", "bad");
+      return;
+    }
+    applyPortfolio(portfolio);
+    setStorageStatus("브라우저 저장값을 불러왔습니다.", "good");
+    analyze();
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/portfolio");
+    if (!response.ok) {
+      throw new Error("load request failed");
+    }
+
+    const portfolio = await response.json();
+    if (!portfolio.holdings) {
+      setStorageStatus("저장된 보유 종목이 없습니다.", "bad");
+      return;
+    }
+
+    applyPortfolio(portfolio);
+    setStorageStatus("서버 저장값을 불러왔습니다.", "good");
+    analyze();
+  } catch (error) {
+    setStorageStatus("보유 종목을 불러오지 못했습니다.", "bad");
+  }
 }
 
 async function analyze() {
@@ -356,6 +438,8 @@ riskSlider.addEventListener("input", () => {
 
 analyzeButton.addEventListener("click", analyze);
 loadSample.addEventListener("click", loadSampleData);
+savePortfolio.addEventListener("click", savePortfolioData);
+loadPortfolio.addEventListener("click", loadPortfolioData);
 
 loadState();
 if (holdingsInput.value.trim()) {

@@ -23,10 +23,15 @@
         <aside class="panel controls" aria-label="analysis inputs">
           <div class="panel-head">
             <h2>입력</h2>
-            <button id="loadSample" class="icon-button" type="button" title="샘플 불러오기" aria-label="샘플 불러오기">
-              <span aria-hidden="true">↺</span>
-            </button>
+            <div class="button-cluster">
+              <button id="savePortfolio" class="mini-button" type="button">저장</button>
+              <button id="loadPortfolio" class="mini-button" type="button">불러오기</button>
+              <button id="loadSample" class="icon-button" type="button" title="샘플 불러오기" aria-label="샘플 불러오기">
+                <span aria-hidden="true">↺</span>
+              </button>
+            </div>
           </div>
+          <p id="storageStatus" class="storage-status">서버 실행 시 보유 종목을 파일로 저장할 수 있습니다.</p>
 
           <label>
             보유 종목

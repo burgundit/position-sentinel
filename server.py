@@ -10,6 +10,8 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent
 APP_DIR = ROOT / "app"
+DATA_DIR = ROOT / "data"
+PORTFOLIO_FILE = DATA_DIR / "portfolio.json"
 HOST = "127.0.0.1"
 PORT = 8000
 
@@ -191,9 +193,50 @@ def analyze_payload(payload: dict) -> dict:
     }
 
 
+def read_json_body(handler: BaseHTTPRequestHandler) -> dict:
+    length = int(handler.headers.get("Content-Length", "0"))
+    if length <= 0:
+        return {}
+    return json.loads(handler.rfile.read(length).decode("utf-8"))
+
+
+def load_portfolio() -> dict:
+    if not PORTFOLIO_FILE.exists():
+        return {
+            "holdings": "",
+            "risk": 3,
+            "rateSignal": 0,
+            "inflationSignal": 0,
+            "growthSignal": 0,
+            "marketTrend": 0,
+        }
+    return json.loads(PORTFOLIO_FILE.read_text(encoding="utf-8"))
+
+
+def save_portfolio(payload: dict) -> dict:
+    DATA_DIR.mkdir(exist_ok=True)
+    portfolio = {
+        "holdings": payload.get("holdings", ""),
+        "risk": int(payload.get("risk", 3)),
+        "rateSignal": int(payload.get("rateSignal", 0)),
+        "inflationSignal": int(payload.get("inflationSignal", 0)),
+        "growthSignal": int(payload.get("growthSignal", 0)),
+        "marketTrend": int(payload.get("marketTrend", 0)),
+    }
+    tmp_file = PORTFOLIO_FILE.with_suffix(".json.tmp")
+    tmp_file.write_text(json.dumps(portfolio, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_file.replace(PORTFOLIO_FILE)
+    return portfolio
+
+
 class PositionSentinelHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = unquote(self.path.split("?", 1)[0])
+
+        if path == "/api/portfolio":
+            self.write_json(200, load_portfolio())
+            return
+
         if path == "/":
             path = "/index.html"
 
@@ -211,15 +254,33 @@ class PositionSentinelHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self) -> None:
-        if self.path != "/api/analyze":
+        if self.path == "/api/analyze":
+            try:
+                payload = read_json_body(self)
+                result = analyze_payload(payload)
+                self.write_json(200, result)
+            except Exception as exc:
+                self.write_json(400, {"error": str(exc)})
+            return
+
+        if self.path == "/api/portfolio":
+            try:
+                portfolio = save_portfolio(read_json_body(self))
+                self.write_json(200, {"saved": True, "portfolio": portfolio})
+            except Exception as exc:
+                self.write_json(400, {"error": str(exc)})
+            return
+
+        self.send_error(404)
+
+    def do_PUT(self) -> None:
+        if self.path != "/api/portfolio":
             self.send_error(404)
             return
 
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-            result = analyze_payload(payload)
-            self.write_json(200, result)
+            portfolio = save_portfolio(read_json_body(self))
+            self.write_json(200, {"saved": True, "portfolio": portfolio})
         except Exception as exc:
             self.write_json(400, {"error": str(exc)})
 
