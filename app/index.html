@@ -51,12 +51,20 @@
 
           <label>
             <span class="label-row">
-              보유 종목
+              보유 종목 원본
               <span class="tip" tabindex="0" aria-label="보유 종목 입력 도움말">?</span>
-              <span class="tip-box">한 줄에 하나씩 입력합니다. 미국/한국 종목명, 6자리 코드, Yahoo 티커를 사용할 수 있습니다. 비중을 생략하면 전체 종목을 동일비중으로 봅니다.</span>
+              <span class="tip-box">위 편집 표와 자동으로 동기화됩니다. 직접 붙여넣고 싶을 때만 사용하세요.</span>
             </span>
-            <textarea id="holdingsInput" rows="7" spellcheck="false" placeholder="예:&#10;Apple&#10;Tesla&#10;삼성전자&#10;000660&#10;KODEX 고배당주"></textarea>
+            <textarea id="holdingsInput" class="raw-holdings" rows="3" spellcheck="false" placeholder="예:&#10;Apple&#10;Tesla&#10;삼성전자&#10;000660&#10;PLUS 고배당주"></textarea>
           </label>
+
+          <section class="holding-editor" aria-label="보유 종목 편집">
+            <div class="subhead-row compact">
+              <span>보유 종목 편집</span>
+              <button id="rebalanceEqual" class="mini-button assist-button" type="button">동일비중</button>
+            </div>
+            <div id="holdingsEditor" class="holdings-editor"></div>
+          </section>
 
           <div class="subhead-row">
             <span>

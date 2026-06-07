@@ -13,6 +13,8 @@ const symbolSearchInput = document.querySelector("#symbolSearchInput");
 const symbolSearchButton = document.querySelector("#symbolSearchButton");
 const symbolSearchStatus = document.querySelector("#symbolSearchStatus");
 const symbolSearchResults = document.querySelector("#symbolSearchResults");
+const holdingsEditor = document.querySelector("#holdingsEditor");
+const rebalanceEqual = document.querySelector("#rebalanceEqual");
 const rateSignal = document.querySelector("#rateSignal");
 const inflationSignal = document.querySelector("#inflationSignal");
 const growthSignal = document.querySelector("#growthSignal");
@@ -130,6 +132,9 @@ const speculativeTickers = new Set(["IONQ", "RIVN", "LCID", "SMCI", "SNOW", "DDO
 const qualityTickers = new Set(["AAPL", "MSFT", "NVDA", "AVGO", "GOOGL", "META", "COST", "LLY", "UNH", "BRK-B", "ASML", "TSM"]);
 const defensiveTickers = new Set(["PG", "KO", "PEP", "WMT", "COST", "JNJ", "UNH", "LLY", "MRK", "SCHD"]);
 const severeNegativeWords = ["lawsuit", "probe", "ban", "recall", "downgrade", "소송", "조사", "금지", "리콜", "하향"];
+
+let editorHoldings = [];
+let isSyncingEditor = false;
 
 const koreaSymbols = {
   "apple": ["AAPL", "Apple"],
@@ -430,6 +435,85 @@ function parseHoldings(text) {
   return holdings;
 }
 
+function holdingsToText(holdings) {
+  return holdings
+    .filter((holding) => holding.ticker || holding.name)
+    .map((holding) => {
+      const symbol = holding.ticker || holding.name;
+      const weight = Number(holding.weight) || 0;
+      return `${symbol}, ${weight}%, ${holding.theme || ""}`.trimEnd();
+    })
+    .join("\n");
+}
+
+function syncEditorFromText() {
+  if (isSyncingEditor) return;
+  editorHoldings = parseHoldings(holdingsInput.value).map((holding) => ({ ...holding }));
+  renderHoldingsEditor();
+}
+
+function syncTextFromEditor({ shouldAnalyze = true, shouldRender = true } = {}) {
+  isSyncingEditor = true;
+  holdingsInput.value = holdingsToText(editorHoldings);
+  isSyncingEditor = false;
+  if (shouldRender) {
+    renderHoldingsEditor();
+  }
+  saveState();
+  if (shouldAnalyze) {
+    analyze();
+  }
+}
+
+function renderHoldingsEditor() {
+  if (!editorHoldings.length) {
+    holdingsEditor.innerHTML = `<div class="editor-empty">종목 API 검색에서 후보를 선택하면 여기에 추가됩니다.</div>`;
+    return;
+  }
+
+  holdingsEditor.innerHTML = `
+    <div class="holding-editor-head">
+      <span>종목</span>
+      <span>비중</span>
+      <span>테마</span>
+      <span></span>
+    </div>
+    ${editorHoldings.map((holding, index) => `
+      <div class="holding-editor-row" data-index="${index}">
+        <div>
+          <strong>${sanitize(holding.name || holding.ticker)}</strong>
+          <span>${sanitize(holding.ticker)}</span>
+        </div>
+        <input class="holding-weight" type="number" min="0" max="100" step="0.1" value="${sanitize(holding.weight || 0)}" aria-label="비중" />
+        <input class="holding-theme" type="text" value="${sanitize(holding.theme || "")}" placeholder="예: 반도체, 배당" aria-label="테마" />
+        <button class="icon-button remove-holding" type="button" title="삭제" aria-label="삭제">×</button>
+      </div>
+    `).join("")}
+  `;
+}
+
+function addOrUpdateEditorHolding(result) {
+  const existing = editorHoldings.find((holding) => holding.ticker === result.ticker);
+  if (existing) {
+    existing.name = result.name || existing.name;
+  } else {
+    editorHoldings.push({
+      ticker: result.ticker,
+      name: result.name || result.ticker,
+      weight: 0,
+      theme: ""
+    });
+  }
+  syncTextFromEditor();
+}
+
+function rebalanceEditorHoldings() {
+  if (!editorHoldings.length) return;
+  const equalWeight = Number((100 / editorHoldings.length).toFixed(2));
+  editorHoldings = editorHoldings.map((holding) => ({ ...holding, weight: equalWeight }));
+  syncTextFromEditor();
+}
+
 function countMatches(text, words) {
   const lower = text.toLowerCase();
   return words.reduce((total, word) => {
@@ -585,14 +669,10 @@ function setSymbolSearchStatus(message, state = "") {
 }
 
 function addHoldingFromSymbol(result) {
-  const existing = holdingsInput.value.trim();
-  const line = `${result.ticker}, 0%, `;
-  holdingsInput.value = existing ? `${existing}\n${line}` : line;
+  addOrUpdateEditorHolding(result);
   setSymbolSearchStatus(`${result.name} / ${result.ticker}를 보유 종목에 추가했습니다.`, "good");
   symbolSearchInput.value = "";
   symbolSearchResults.innerHTML = "";
-  saveState();
-  analyze();
 }
 
 function renderSymbolResults(results) {
@@ -652,6 +732,7 @@ async function searchSymbols() {
 
 function applyPortfolio(portfolio) {
   holdingsInput.value = portfolio.holdings || "";
+  syncEditorFromText();
   riskSlider.value = String(portfolio.risk ?? "3");
   rateSignal.value = String(portfolio.rateSignal ?? "0");
   inflationSignal.value = String(portfolio.inflationSignal ?? "0");
@@ -996,6 +1077,7 @@ function loadState() {
   if (!state) return;
 
   holdingsInput.value = state.holdings || "";
+  syncEditorFromText();
   newsInput.value = state.news || "";
   riskSlider.value = state.risk || "3";
   rateSignal.value = state.rate || "0";
@@ -1014,6 +1096,7 @@ function loadSampleData() {
     "삼성전자, 20%, 반도체/전자",
     "KODEX 고배당주, 20%, 고배당주 ETF"
   ].join("\n");
+  syncEditorFromText();
   newsInput.value = [
     "현대차 배당 정책과 전기차 수요를 점검합니다.",
     "SK하이닉스와 삼성전자는 메모리 업황 및 AI 수요를 확인합니다.",
@@ -1038,6 +1121,35 @@ savePortfolio.addEventListener("click", savePortfolioData);
 loadPortfolio.addEventListener("click", loadPortfolioData);
 autoEnvironment.addEventListener("click", applyAutoEnvironment);
 autoNews.addEventListener("click", applyAutoNews);
+rebalanceEqual.addEventListener("click", rebalanceEditorHoldings);
+holdingsInput.addEventListener("input", () => {
+  syncEditorFromText();
+  saveState();
+});
+holdingsEditor.addEventListener("input", (event) => {
+  const row = event.target.closest(".holding-editor-row");
+  if (!row) return;
+  const index = Number(row.dataset.index);
+  if (!editorHoldings[index]) return;
+  if (event.target.classList.contains("holding-weight")) {
+    editorHoldings[index].weight = Number(event.target.value) || 0;
+  }
+  if (event.target.classList.contains("holding-theme")) {
+    editorHoldings[index].theme = event.target.value;
+  }
+  syncTextFromEditor({ shouldAnalyze: false, shouldRender: false });
+});
+holdingsEditor.addEventListener("change", () => {
+  analyze();
+});
+holdingsEditor.addEventListener("click", (event) => {
+  const button = event.target.closest(".remove-holding");
+  if (!button) return;
+  const row = button.closest(".holding-editor-row");
+  const index = Number(row.dataset.index);
+  editorHoldings.splice(index, 1);
+  syncTextFromEditor();
+});
 symbolSearchButton.addEventListener("click", searchSymbols);
 symbolSearchInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
