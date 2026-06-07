@@ -26,6 +26,8 @@ NEWS_CACHE: dict[str, tuple[float, list[dict]]] = {}
 NEWS_CACHE_SECONDS = 600
 NEWS_PER_TICKER = 3
 NEWS_DESCRIPTION_LIMIT = 220
+SYMBOL_SEARCH_CACHE: dict[str, tuple[float, tuple[str, str]]] = {}
+SYMBOL_SEARCH_CACHE_SECONDS = 86400
 
 POSITIVE_WORDS = [
     "beat",
@@ -87,6 +89,24 @@ SECTOR_SENSITIVITY = {
 }
 
 KOREA_SYMBOLS = {
+    "apple": ("AAPL", "Apple"),
+    "애플": ("AAPL", "Apple"),
+    "tesla": ("TSLA", "Tesla"),
+    "테슬라": ("TSLA", "Tesla"),
+    "nvidia": ("NVDA", "NVIDIA"),
+    "엔비디아": ("NVDA", "NVIDIA"),
+    "microsoft": ("MSFT", "Microsoft"),
+    "마이크로소프트": ("MSFT", "Microsoft"),
+    "google": ("GOOGL", "Alphabet"),
+    "구글": ("GOOGL", "Alphabet"),
+    "alphabet": ("GOOGL", "Alphabet"),
+    "알파벳": ("GOOGL", "Alphabet"),
+    "amazon": ("AMZN", "Amazon"),
+    "아마존": ("AMZN", "Amazon"),
+    "meta": ("META", "Meta"),
+    "메타": ("META", "Meta"),
+    "netflix": ("NFLX", "Netflix"),
+    "넷플릭스": ("NFLX", "Netflix"),
     "현대차": ("005380.KS", "현대차"),
     "현대자동차": ("005380.KS", "현대차"),
     "sk하이닉스": ("000660.KS", "SK하이닉스"),
@@ -101,9 +121,36 @@ KOREA_SYMBOLS = {
     "고배당 etf": ("279530.KS", "KODEX 고배당주"),
     "tiger 코스피고배당": ("210780.KS", "TIGER 코스피고배당"),
     "arirang 고배당주": ("161510.KS", "ARIRANG 고배당주"),
+    "셀트리온": ("068270.KS", "셀트리온"),
+    "lg에너지솔루션": ("373220.KS", "LG에너지솔루션"),
+    "lg 엔솔": ("373220.KS", "LG에너지솔루션"),
+    "엘지에너지솔루션": ("373220.KS", "LG에너지솔루션"),
+    "naver": ("035420.KS", "NAVER"),
+    "네이버": ("035420.KS", "NAVER"),
+    "카카오": ("035720.KS", "카카오"),
+    "기아": ("000270.KS", "기아"),
+    "기아차": ("000270.KS", "기아"),
+    "posco홀딩스": ("005490.KS", "POSCO홀딩스"),
+    "포스코홀딩스": ("005490.KS", "POSCO홀딩스"),
+    "kb금융": ("105560.KS", "KB금융"),
+    "신한지주": ("055550.KS", "신한지주"),
+    "삼성바이오로직스": ("207940.KS", "삼성바이오로직스"),
+    "삼바": ("207940.KS", "삼성바이오로직스"),
+    "lg화학": ("051910.KS", "LG화학"),
+    "엘지화학": ("051910.KS", "LG화학"),
+    "삼성sdi": ("006400.KS", "삼성SDI"),
+    "현대모비스": ("012330.KS", "현대모비스"),
 }
 
 KOREA_TICKER_NAMES = {
+    "AAPL": "Apple",
+    "TSLA": "Tesla",
+    "NVDA": "NVIDIA",
+    "MSFT": "Microsoft",
+    "GOOGL": "Alphabet",
+    "AMZN": "Amazon",
+    "META": "Meta",
+    "NFLX": "Netflix",
     "005380.KS": "현대차",
     "000660.KS": "SK하이닉스",
     "006800.KS": "미래에셋증권",
@@ -111,7 +158,60 @@ KOREA_TICKER_NAMES = {
     "279530.KS": "KODEX 고배당주",
     "210780.KS": "TIGER 코스피고배당",
     "161510.KS": "ARIRANG 고배당주",
+    "068270.KS": "셀트리온",
+    "373220.KS": "LG에너지솔루션",
+    "035420.KS": "NAVER",
+    "035720.KS": "카카오",
+    "000270.KS": "기아",
+    "005490.KS": "POSCO홀딩스",
+    "105560.KS": "KB금융",
+    "055550.KS": "신한지주",
+    "207940.KS": "삼성바이오로직스",
+    "051910.KS": "LG화학",
+    "006400.KS": "삼성SDI",
+    "012330.KS": "현대모비스",
 }
+
+
+def looks_like_symbol(value: str) -> bool:
+    return bool(re.fullmatch(r"[\^A-Za-z0-9][A-Za-z0-9.\-^=]{0,14}", value.strip()))
+
+
+def search_yahoo_symbol(query: str) -> tuple[str, str] | None:
+    key = query.strip().lower()
+    now = time.time()
+    cached = SYMBOL_SEARCH_CACHE.get(key)
+    if cached and now - cached[0] < SYMBOL_SEARCH_CACHE_SECONDS:
+        return cached[1]
+
+    url = f"https://query1.finance.yahoo.com/v1/finance/search?q={quote(query)}&quotesCount=8&newsCount=0"
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        },
+    )
+
+    with urlopen(request, timeout=8) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    quotes = [
+        quote_item
+        for quote_item in payload.get("quotes", [])
+        if quote_item.get("symbol") and quote_item.get("quoteType") in {"EQUITY", "ETF", "INDEX"}
+    ]
+    if not quotes:
+        return None
+
+    preferred_exchanges = {"NMS": 0, "NGM": 0, "NYQ": 0, "PCX": 1, "KSC": 1, "KOE": 1}
+    quotes.sort(key=lambda item: preferred_exchanges.get(item.get("exchange"), 5))
+    best = quotes[0]
+    symbol = best["symbol"].upper()
+    name = best.get("shortname") or best.get("longname") or query
+    result = (symbol, name)
+    SYMBOL_SEARCH_CACHE[key] = (now, result)
+    return result
 
 
 def normalize_symbol(raw_symbol: str) -> tuple[str, str]:
@@ -123,6 +223,16 @@ def normalize_symbol(raw_symbol: str) -> tuple[str, str]:
     upper_symbol = symbol.upper()
     if re.fullmatch(r"\d{6}", upper_symbol):
         upper_symbol = f"{upper_symbol}.KS"
+
+    if upper_symbol in KOREA_TICKER_NAMES or (symbol == upper_symbol and looks_like_symbol(symbol)):
+        return upper_symbol, KOREA_TICKER_NAMES.get(upper_symbol, symbol)
+
+    try:
+        found = search_yahoo_symbol(symbol)
+        if found:
+            return found
+    except Exception:
+        pass
 
     return upper_symbol, KOREA_TICKER_NAMES.get(upper_symbol, symbol)
 
