@@ -251,6 +251,77 @@ def get_market_data_map(holdings: list[dict], enabled: bool) -> dict[str, dict]:
     return market_data
 
 
+def score_from_trend(market: dict, positive_when_up: bool = True) -> int:
+    trend_score = int(market.get("trendScore", 0))
+    if not positive_when_up:
+        trend_score *= -1
+    return 2 if trend_score > 0 else -2 if trend_score < 0 else 0
+
+
+def score_from_ratio(primary: dict, defensive: dict) -> int:
+    primary_change = primary.get("changePercent")
+    defensive_change = defensive.get("changePercent")
+    if primary_change is None or defensive_change is None:
+        return 0
+
+    spread = primary_change - defensive_change
+    if spread >= 1:
+        return 2
+    if spread <= -1:
+        return -2
+    return 0
+
+
+def signal_label(value: int, positive: str, neutral: str, negative: str) -> str:
+    if value > 0:
+        return positive
+    if value < 0:
+        return negative
+    return neutral
+
+
+def build_environment_suggestion() -> dict:
+    tickers = ["^TNX", "SPY", "XLY", "XLP", "TIP", "IEF"]
+    market = {}
+    with ThreadPoolExecutor(max_workers=min(MARKET_MAX_WORKERS, len(tickers))) as executor:
+        futures = {executor.submit(get_market_data, ticker, True): ticker for ticker in tickers}
+        for future in as_completed(futures):
+            ticker = futures[future]
+            try:
+                market[ticker] = future.result()
+            except Exception as exc:
+                market[ticker] = {"status": "unavailable", "trendScore": 0, "message": str(exc)}
+
+    rate_signal = score_from_trend(market.get("^TNX", {}), positive_when_up=False)
+    market_signal = score_from_trend(market.get("SPY", {}), positive_when_up=True)
+    growth_signal = score_from_ratio(market.get("XLY", {}), market.get("XLP", {}))
+    inflation_signal = score_from_ratio(market.get("TIP", {}), market.get("IEF", {})) * -1
+
+    return {
+        "signals": {
+            "rateSignal": rate_signal,
+            "inflationSignal": inflation_signal,
+            "growthSignal": growth_signal,
+            "marketTrend": market_signal,
+        },
+        "labels": {
+            "rateSignal": signal_label(rate_signal, "인하 기대", "중립", "인상/고금리 압박"),
+            "inflationSignal": signal_label(inflation_signal, "둔화", "중립", "재가속"),
+            "growthSignal": signal_label(growth_signal, "개선", "중립", "둔화"),
+            "marketTrend": signal_label(market_signal, "상승", "횡보", "하락"),
+        },
+        "proxies": {
+            "^TNX": market.get("^TNX", {}),
+            "SPY": market.get("SPY", {}),
+            "XLY": market.get("XLY", {}),
+            "XLP": market.get("XLP", {}),
+            "TIP": market.get("TIP", {}),
+            "IEF": market.get("IEF", {}),
+        },
+        "source": "Yahoo Finance market proxies",
+    }
+
+
 def analyze_payload(payload: dict) -> dict:
     holdings = parse_holdings(payload.get("holdings", ""))
     news = payload.get("news", "")
@@ -346,6 +417,13 @@ class PositionSentinelHandler(BaseHTTPRequestHandler):
 
         if path == "/api/portfolio":
             self.write_json(200, load_portfolio())
+            return
+
+        if path == "/api/environment":
+            try:
+                self.write_json(200, build_environment_suggestion())
+            except Exception as exc:
+                self.write_json(400, {"error": str(exc)})
             return
 
         if path == "/":

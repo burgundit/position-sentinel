@@ -7,6 +7,7 @@ const loadSample = document.querySelector("#loadSample");
 const savePortfolio = document.querySelector("#savePortfolio");
 const loadPortfolio = document.querySelector("#loadPortfolio");
 const marketDataToggle = document.querySelector("#marketDataToggle");
+const autoEnvironment = document.querySelector("#autoEnvironment");
 const rateSignal = document.querySelector("#rateSignal");
 const inflationSignal = document.querySelector("#inflationSignal");
 const growthSignal = document.querySelector("#growthSignal");
@@ -23,6 +24,7 @@ const decisionReason = document.querySelector("#decisionReason");
 const positionsTable = document.querySelector("#positionsTable");
 const checklist = document.querySelector("#checklist");
 const storageStatus = document.querySelector("#storageStatus");
+const environmentStatus = document.querySelector("#environmentStatus");
 
 const positiveWords = [
   "beat",
@@ -172,6 +174,11 @@ function setStorageStatus(message, state = "") {
   storageStatus.className = state ? `storage-status ${state}` : "storage-status";
 }
 
+function setEnvironmentStatus(message, state = "") {
+  environmentStatus.textContent = message;
+  environmentStatus.className = state ? `storage-status ${state}` : "storage-status";
+}
+
 function applyPortfolio(portfolio) {
   holdingsInput.value = portfolio.holdings || "";
   riskSlider.value = String(portfolio.risk ?? "3");
@@ -240,6 +247,40 @@ async function loadPortfolioData() {
     analyze();
   } catch (error) {
     setStorageStatus("보유 종목을 불러오지 못했습니다.", "bad");
+  }
+}
+
+async function applyAutoEnvironment() {
+  if (!canUseServerStorage()) {
+    setEnvironmentStatus("서버 실행 화면에서만 자동 입력을 사용할 수 있습니다.", "bad");
+    return;
+  }
+
+  autoEnvironment.disabled = true;
+  autoEnvironment.textContent = "조회 중";
+  setEnvironmentStatus("시장 프록시를 조회하고 있습니다.");
+
+  try {
+    const response = await fetch("/api/environment");
+    if (!response.ok) {
+      throw new Error("environment request failed");
+    }
+
+    const result = await response.json();
+    rateSignal.value = String(result.signals.rateSignal ?? 0);
+    inflationSignal.value = String(result.signals.inflationSignal ?? 0);
+    growthSignal.value = String(result.signals.growthSignal ?? 0);
+    marketTrend.value = String(result.signals.marketTrend ?? 0);
+    setEnvironmentStatus(
+      `자동 입력: 금리 ${result.labels.rateSignal}, 인플레이션 ${result.labels.inflationSignal}, 경기 ${result.labels.growthSignal}, 시장 ${result.labels.marketTrend}`,
+      "good"
+    );
+    saveState();
+  } catch (error) {
+    setEnvironmentStatus("환경 자동 입력에 실패했습니다. 수동 선택값을 유지합니다.", "bad");
+  } finally {
+    autoEnvironment.disabled = false;
+    autoEnvironment.textContent = "자동 입력";
   }
 }
 
@@ -468,6 +509,7 @@ analyzeButton.addEventListener("click", analyze);
 loadSample.addEventListener("click", loadSampleData);
 savePortfolio.addEventListener("click", savePortfolioData);
 loadPortfolio.addEventListener("click", loadPortfolioData);
+autoEnvironment.addEventListener("click", applyAutoEnvironment);
 
 loadState();
 if (holdingsInput.value.trim()) {
