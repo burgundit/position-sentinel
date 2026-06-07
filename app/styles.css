@@ -179,9 +179,60 @@ h2 {
 }
 
 .subhead-row span {
+  position: relative;
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
+}
+
+.label-row {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+}
+
+.tip {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--accent-strong);
+  background: #eef5f7;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: help;
+  outline: none;
+}
+
+.tip-box {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  width: min(280px, 78vw);
+  padding: 10px 12px;
+  border: 1px solid #cdd8d5;
+  border-radius: 8px;
+  color: var(--ink);
+  background: #ffffff;
+  box-shadow: 0 16px 32px rgba(23, 33, 27, 0.16);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.tip:hover + .tip-box,
+.tip:focus + .tip-box {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 label {
@@ -312,7 +363,10 @@ input[type="range"] {
 }
 
 .metric-grid span {
-  display: block;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
