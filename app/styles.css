@@ -194,7 +194,12 @@ h2 {
   margin-bottom: -10px;
 }
 
-.subhead-row span {
+.subhead-row > span {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
@@ -245,9 +250,9 @@ h2 {
   transition: opacity 140ms ease, transform 140ms ease;
 }
 
-.tip-box-right {
-  right: 0;
-  left: auto;
+.subhead-row .tip-box {
+  left: 0;
+  top: calc(100% + 8px);
 }
 
 .tip:hover + .tip-box,
