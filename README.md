@@ -14,8 +14,9 @@
 - `app/modules/holdings.js`: 보유종목 파싱과 입력 문자열 변환
 - `app/modules/symbols.js`: 종목 별칭과 티커 정규화
 - `app/modules/utils.js`: 공통 포맷/문자열 유틸
-- `server.py`: Python 서버, 분석 API, 포트폴리오 저장 API, Yahoo Finance 조회
-- `symbols.py`: 서버용 종목 별칭, 티커 정규화, KRX/Yahoo 종목 검색
+- `server.py`: 기존 실행 명령을 유지하는 Python 서버 진입점
+- `backend/server.py`: Python 서버, 분석 API, 포트폴리오 저장 API, Yahoo Finance 조회
+- `backend/symbols.py`: 서버용 종목 별칭, 티커 정규화, KRX/Yahoo 종목 검색
 - `run_server.bat`: Windows 실행용 서버 시작 파일
 - `main.py`: Python 개발환경 테스트 파일
 - `.venv/`: Python 가상환경

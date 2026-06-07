@@ -26,7 +26,7 @@ jobs:
           node-version: "24"
 
       - name: Check Python syntax
-        run: python -m py_compile server.py symbols.py main.py
+        run: python -m py_compile server.py backend/server.py backend/symbols.py main.py
 
       - name: Check JavaScript syntax
         shell: pwsh
